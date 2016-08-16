@@ -114,6 +114,7 @@ func (g *Generator) generateOSInstance(url, deploymentId string) (ComputeInstanc
 		}
 		var volumeId string
 		resultChan := make(chan string, 1)
+		cancelChannel := make(chan struct{})
 		go func() {
 			for {
 				log.Debugf("Looking for volume_id")
@@ -124,12 +125,19 @@ func (g *Generator) generateOSInstance(url, deploymentId string) (ComputeInstanc
 						return
 					}
 				}
-				time.Sleep(1 * time.Second)
+				select {
+				case <- cancelChannel:
+					return
+				case <- time.After(time.Second*1):
+				}
 			}
 		}()
 		// TODO add a cancellation signal
 		select {
 		case volumeId = <-resultChan:
+		case  <- time.After(time.Millisecond*3000):
+			volumeId = fmt.Sprintf("${openstack_blockstorage_volume_v1.%s.id}", volumeNodeName)
+			close(cancelChannel)
 		}
 
 		vol := Volume{VolumeId: volumeId, Device: device}
@@ -149,6 +157,7 @@ func (g *Generator) generateOSInstance(url, deploymentId string) (ComputeInstanc
 		log.Debugf("Looking for Floating IP")
 		var floatingIP string
 		resultChan := make(chan string, 1)
+		cancelChannel := make(chan struct{})
 		go func() {
 			for {
 				if kp, _, _ := g.kv.Get(path.Join(deployments.DeploymentKVPrefix, deploymentId, "topology/nodes", networkNodeName, "capabilities/endpoint/attributes/floating_ip_address"), nil); kp != nil {
@@ -157,11 +166,18 @@ func (g *Generator) generateOSInstance(url, deploymentId string) (ComputeInstanc
 						return
 					}
 				}
-				time.Sleep(1 * time.Second)
+				select {
+				case <- cancelChannel:
+					return
+				case <- time.After(1 * time.Second):
+				}
 			}
 		}()
 		select {
 		case floatingIP = <-resultChan:
+		case <- time.After(time.Millisecond*3000):
+			floatingIP=fmt.Sprintf("${openstack_compute_floatingip_v2.%s.address}", networkNodeName)
+			close(cancelChannel)
 		}
 		instance.FloatingIp = floatingIP
 	}

@@ -11,45 +11,57 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Executor interface {
-	ProvisionNode(deploymentId, nodeName string) error
+	ProvisionNode() error
 	DestroyNode(deploymentId, nodeName string) error
 }
 
 type defaultExecutor struct {
+	depId string
+	nodeChan chan string
 	kv *api.KV
 }
 
-func NewExecutor(kv *api.KV) Executor {
-	return &defaultExecutor{kv: kv}
+
+func NewExecutor(kv *api.KV, depID string, channel chan string) Executor {
+	return &defaultExecutor{kv: kv, depId: depID, nodeChan: channel}
 }
 
-func (e *defaultExecutor) ProvisionNode(deploymentId, nodeName string) error {
+func (e *defaultExecutor) ProvisionNode() error {
+	for  {
+		select {
+		case nodeName := <- e.nodeChan:
+			log.Debugf("Provisioning : %v", nodeName)
+			kvPair, _, err := e.kv.Get(path.Join(deployments.DeploymentKVPrefix, e.depId, "topology/nodes", nodeName, "type"), nil)
+			if err != nil {
+				return err
+			}
+			if kvPair == nil {
+				return fmt.Errorf("Type for node '%s' in deployment '%s' not found", nodeName, e.depId)
+			}
+			nodeType := string(kvPair.Value)
 
-	kvPair, _, err := e.kv.Get(path.Join(deployments.DeploymentKVPrefix, deploymentId, "topology/nodes", nodeName, "type"), nil)
-	if err != nil {
-		return err
-	}
-	if kvPair == nil {
-		return fmt.Errorf("Type for node '%s' in deployment '%s' not found", nodeName, deploymentId)
-	}
-	nodeType := string(kvPair.Value)
+			switch {
+			case strings.HasPrefix(nodeType, "janus.nodes.openstack."):
+				osGenerator := openstack.NewGenerator(e.kv)
+				if err := osGenerator.GenerateTerraformInfraForNode(e.depId, nodeName); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("Unsupported node type '%s' for node '%s' in deployment '%s'", nodeType, nodeName, e.depId)
+			}
 
-	switch {
-	case strings.HasPrefix(nodeType, "janus.nodes.openstack."):
-		osGenerator := openstack.NewGenerator(e.kv)
-		if err := osGenerator.GenerateTerraformInfraForNode(deploymentId, nodeName); err != nil {
-			return err
+		case <- time.After(time.Millisecond*500):
+			if err := e.applyInfrastructure(); err != nil {
+				return err
+			}
+
 		}
-	default:
-		return fmt.Errorf("Unsupported node type '%s' for node '%s' in deployment '%s'", nodeType, nodeName, deploymentId)
 	}
 
-	if err := e.applyInfrastructure(deploymentId, nodeName); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -60,8 +72,28 @@ func (e *defaultExecutor) DestroyNode(deploymentId, nodeName string) error {
 	return nil
 }
 
-func (e *defaultExecutor) applyInfrastructure(depId, nodeName string) error {
-	infraPath := filepath.Join("work", "deployments", depId, "infra", nodeName)
+func (e *defaultExecutor) refreshInfrastructure() error  {
+	log.Debugf("Refreshing infrastructure")
+	infraPath := filepath.Join("work", "deployments", e.depId, "infra")
+	cmd := exec.Command("terraform", "refresh")
+	cmd.Dir = infraPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		log.Print(err)
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *defaultExecutor) applyInfrastructure() error {
+
+	log.Debugf("Applying infrstructure")
+	infraPath := filepath.Join("work", "deployments", e.depId, "infra")
 	cmd := exec.Command("terraform", "apply")
 	cmd.Dir = infraPath
 	cmd.Stdout = os.Stdout
@@ -71,8 +103,17 @@ func (e *defaultExecutor) applyInfrastructure(depId, nodeName string) error {
 		log.Print(err)
 		return err
 	}
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
 
-	return cmd.Wait()
+	err := e.refreshInfrastructure()
+	if err != nil {
+		return err
+	}
+
+
+	return nil
 
 }
 func (e *defaultExecutor) destroyInfrastructure(depId, nodeName string) error {

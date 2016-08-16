@@ -8,6 +8,7 @@ import (
 	"novaforge.bull.com/starlings-janus/janus/log"
 	"path"
 	"sync"
+	"novaforge.bull.com/starlings-janus/janus/prov/terraform"
 )
 
 type Worker struct {
@@ -30,7 +31,7 @@ func (w Worker) setDeploymentStatus(deploymentId string, status deployments.Depl
 	kv.Put(p, nil)
 }
 
-func (w Worker) runStep(ctx context.Context, step *Step, deploymentId string, wg *sync.WaitGroup, errc chan error, runningSteps map[string]struct{}) {
+func (w Worker) runStep(ctx context.Context, step *Step, deploymentId string, wg *sync.WaitGroup, errc chan error, runningSteps map[string]struct{}, channel chan string) {
 	if _, ok := runningSteps[step.Name]; ok {
 		// Already running
 		log.Debugf("step %q already running", step.Name)
@@ -38,23 +39,28 @@ func (w Worker) runStep(ctx context.Context, step *Step, deploymentId string, wg
 	}
 	log.Debugf("Running step %q", step.Name)
 	runningSteps[step.Name] = struct{}{}
-	go step.run(ctx, deploymentId, wg, w.consulClient.KV(), errc, w.shutdownCh)
+	log.Debugf("Processing run")
+	go step.run(ctx, deploymentId, wg, w.consulClient.KV(), errc, w.shutdownCh, channel)
 	for _, next := range step.Next {
 		wg.Add(1)
 		log.Debugf("Try run next step %q", next.Name)
-		go w.runStep(ctx, next, deploymentId, wg, errc, runningSteps)
+		go w.runStep(ctx, next, deploymentId, wg, errc, runningSteps, channel)
 	}
 }
 
 func (w Worker) processWorkflow(wfRoots []*Step, deploymentId string) error {
+	log.Debugf("Processing Workflow")
+	nodeChan := make(chan string)
 	var wg sync.WaitGroup
+	exec := terraform.NewExecutor(w.consulClient.KV(),deploymentId,nodeChan)
+	go exec.ProvisionNode()
 	runningSteps := make(map[string]struct{})
 	ctx := context.TODO()
 	ctx, cancel := context.WithCancel(ctx)
 	errc := make(chan error)
 	for _, step := range wfRoots {
 		wg.Add(1)
-		go w.runStep(ctx, step, deploymentId, &wg, errc, runningSteps)
+		go w.runStep(ctx, step, deploymentId, &wg, errc, runningSteps, nodeChan)
 	}
 
 	go func(wg *sync.WaitGroup, cancel context.CancelFunc) {

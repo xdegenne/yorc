@@ -7,7 +7,7 @@ import (
 	"novaforge.bull.com/starlings-janus/janus/deployments"
 	"novaforge.bull.com/starlings-janus/janus/log"
 	"novaforge.bull.com/starlings-janus/janus/prov/ansible"
-	"novaforge.bull.com/starlings-janus/janus/prov/terraform"
+	//"novaforge.bull.com/starlings-janus/janus/prov/terraform"
 	"path"
 	"strings"
 	"sync"
@@ -69,7 +69,7 @@ type visitStep struct {
 	step     *Step
 }
 
-func (s *Step) run(ctx context.Context, deploymentId string, wg *sync.WaitGroup, kv *api.KV, errc chan error, shutdownChan chan struct{}) {
+func (s *Step) run(ctx context.Context, deploymentId string, wg *sync.WaitGroup, kv *api.KV, errc chan error, shutdownChan chan struct{}, channel chan string) {
 
 	defer wg.Done()
 
@@ -92,11 +92,11 @@ func (s *Step) run(ctx context.Context, deploymentId string, wg *sync.WaitGroup,
 		actType := activity.ActivityType()
 		switch {
 		case actType == "delegate":
-			provisioner := terraform.NewExecutor(kv)
 			delegateOp := activity.ActivityValue()
 			switch delegateOp {
 			case "install":
-				if err := provisioner.ProvisionNode(deploymentId, s.Node); err != nil {
+				channel <- s.Node
+				/*if err := provisioner.ProvisionNode(deploymentId, s.Node); err != nil {
 					log.Printf("Sending error %v to error channel", err)
 					errc <- err
 					return
@@ -105,7 +105,7 @@ func (s *Step) run(ctx context.Context, deploymentId string, wg *sync.WaitGroup,
 				if err := provisioner.DestroyNode(deploymentId, s.Node); err != nil {
 					errc <- err
 					return
-				}
+				}*/
 			default:
 				errc <- fmt.Errorf("Unsupported delegate operation '%s' for step '%s'", delegateOp, s.Name)
 				return
