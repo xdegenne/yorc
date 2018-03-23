@@ -44,6 +44,24 @@ func GetRepositoryURLFromName(kv *api.KV, deploymentID, repoName string) (url st
 	return
 }
 
+// GetRepositoryTypeFromName allow you to retrieve the url of a repo from his name
+func GetRepositoryTypeFromName(kv *api.KV, deploymentID, repoName string) (url string, err error) {
+	repositoriesPath := path.Join(consulutil.DeploymentKVPrefix, deploymentID, "topology", "repositories")
+	res, _, err := kv.Get(path.Join(repositoriesPath, repoName, "type"), nil)
+	if err != nil {
+		err = errors.Wrap(err, consulutil.ConsulGenericErrMsg)
+		return
+	}
+
+	if res == nil {
+		err = errors.Errorf("The repository %v has been not found", repoName)
+		return
+	}
+
+	url = string(res.Value)
+	return
+}
+
 // GetRepositoryTokenTypeFromName retrieves the token_type of credential for a given repoName
 func GetRepositoryTokenTypeFromName(kv *api.KV, deploymentID, repoName string) (string, error) {
 	repositoriesPath := path.Join(consulutil.DeploymentKVPrefix, deploymentID, "topology", "repositories")
