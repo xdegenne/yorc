@@ -43,14 +43,19 @@ import (
 	"github.com/ystia/yorc/events"
 	"github.com/ystia/yorc/helper/consulutil"
 	"github.com/ystia/yorc/helper/executil"
+	"github.com/ystia/yorc/helper/pathutil"
 	"github.com/ystia/yorc/helper/provutil"
+	"github.com/ystia/yorc/helper/sshutil"
 	"github.com/ystia/yorc/helper/stringutil"
 	"github.com/ystia/yorc/log"
 	"github.com/ystia/yorc/prov"
 	"github.com/ystia/yorc/prov/operations"
 	"github.com/ystia/yorc/tasks"
 	"github.com/ystia/yorc/tosca"
+	"golang.org/x/crypto/ssh"
 )
+
+const taskContextOutput = "task_context"
 
 const ansibleConfig = `[defaults]
 host_key_checking=False
@@ -142,7 +147,7 @@ type executionCommon struct {
 	Primary                  string
 	BasePrimary              string
 	Dependencies             []string
-	hosts                    map[string]hostConnection
+	hosts                    map[string]*hostConnection
 	OperationPath            string
 	NodePath                 string
 	NodeTypePath             string
@@ -388,10 +393,10 @@ func (e *executionCommon) setHostConnection(kv *api.KV, host, instanceID, capTyp
 }
 
 func (e *executionCommon) resolveHostsOrchestratorLocal(nodeName string, instances []string) error {
-	e.hosts = make(map[string]hostConnection, len(instances))
+	e.hosts = make(map[string]*hostConnection, len(instances))
 	for i := range instances {
 		instanceName := operations.GetInstanceName(nodeName, instances[i])
-		e.hosts[instanceName] = hostConnection{host: instanceName, instanceID: instances[i]}
+		e.hosts[instanceName] = &hostConnection{host: instanceName, instanceID: instances[i]}
 	}
 	return nil
 }
@@ -411,7 +416,7 @@ func (e *executionCommon) resolveHostsOnCompute(nodeName string, instances []str
 		}
 	}
 
-	hosts := make(map[string]hostConnection)
+	hosts := make(map[string]*hostConnection)
 	var found bool
 	for i := len(hostedOnList) - 1; i >= 0 && !found; i-- {
 		host := hostedOnList[i]
@@ -433,8 +438,8 @@ func (e *executionCommon) resolveHostsOnCompute(nodeName string, instances []str
 				if ipAddress != nil && ipAddress.RawString() != "" {
 					ipAddressStr := config.DefaultConfigTemplateResolver.ResolveValueWithTemplates("host.ip_address", ipAddress.RawString()).(string)
 					instanceName := operations.GetInstanceName(nodeName, instance)
-					hostConn := hostConnection{host: ipAddressStr, instanceID: instance}
-					err = e.setHostConnection(e.kv, host, instance, capType, &hostConn)
+					hostConn := &hostConnection{host: ipAddressStr, instanceID: instance}
+					err = e.setHostConnection(e.kv, host, instance, capType, hostConn)
 					if err != nil {
 						mess := fmt.Sprintf("[ERROR] failed to set host connection with error: %+v", err)
 						log.Debug(mess)
@@ -640,6 +645,41 @@ func (e *executionCommon) resolveOperationOutputPath() error {
 	return nil
 }
 
+func (e *executionCommon) addRunnablesSpecificInputsAndOutputs() error {
+	opName := strings.ToLower(e.operation.Name)
+	if !strings.HasPrefix(opName, tosca.RunnableInterfaceName) {
+		return nil
+	}
+	for i, instanceID := range e.sourceNodeInstances {
+		// TODO(loicalbertin) This part should be refactored to store properly the instance ID
+		// don't to it for now as it is for a quickfix
+		if opName == tosca.RunnableSubmitOperationName {
+			e.Outputs["TOSCA_JOB_ID_"+fmt.Sprint(instanceID)] = taskContextOutput
+			e.HaveOutput = true
+		} else if opName == tosca.RunnableRunOperationName {
+			e.Outputs["TOSCA_JOB_STATUS_"+fmt.Sprint(instanceID)] = taskContextOutput
+			e.HaveOutput = true
+		}
+
+		// Now store jobID as input for run and cancel ops
+		if opName == tosca.RunnableRunOperationName || opName == tosca.RunnableCancelOperationName {
+			jobID, err := tasks.GetTaskData(e.kv, e.taskID, e.NodeName+"-"+instanceID+"-TOSCA_JOB_ID")
+			if err != nil {
+				return errors.Wrap(err, "failed to retrieve job id for monitoring, this is likely that the submit operation does not properly export a TOSCA_JOB_ID output")
+			}
+			e.EnvInputs = append(e.EnvInputs, &operations.EnvInput{
+				Name:         "TOSCA_JOB_ID",
+				InstanceName: operations.GetInstanceName(e.NodeName, instanceID),
+				Value:        jobID,
+			})
+			if i == 0 {
+				e.VarInputsNames = append(e.VarInputsNames, "TOSCA_JOB_ID")
+			}
+		}
+	}
+	return nil
+}
+
 // resolveIsPerInstanceOperation sets e.isPerInstanceOperation to true if the given operationName contains one of the following patterns (case doesn't matter):
 //	add_target, remove_target, add_source, remove_source, target_changed
 // And in case of a relationship operation the relationship does not derive from "tosca.relationships.HostedOn" as it makes no sense till we scale at compute level
@@ -675,6 +715,7 @@ func (e *executionCommon) resolveExecution() error {
 	if err = e.resolveInputs(); err != nil {
 		return err
 	}
+
 	if err = e.resolveArtifacts(); err != nil {
 		return err
 	}
@@ -689,7 +730,9 @@ func (e *executionCommon) resolveExecution() error {
 	if err = e.resolveOperationOutputPath(); err != nil {
 		return err
 	}
-
+	if err = e.addRunnablesSpecificInputsAndOutputs(); err != nil {
+		return err
+	}
 	return e.resolveContext()
 
 }
@@ -709,6 +752,7 @@ func (e *executionCommon) execute(ctx context.Context, retry bool) error {
 		for _, instanceID := range instances {
 			instanceName := operations.GetInstanceName(nodeName, instanceID)
 			log.Debugf("Executing operation %q, on node %q, with current instance %q", e.operation.Name, e.NodeName, instanceName)
+			ctx = events.AddLogOptionalFields(ctx, events.LogOptionalFields{events.InstanceID: instanceID})
 			err := e.executeWithCurrentInstance(ctx, retry, instanceName)
 			if err != nil {
 				return err
@@ -744,7 +788,7 @@ func (e *executionCommon) generateHostConnectionForOrchestratorOperation(ctx con
 	return nil
 }
 
-func (e *executionCommon) getSSHCredentials(ctx context.Context, host hostConnection, warnOfMissingValues bool) sshCredentials {
+func (e *executionCommon) getSSHCredentials(ctx context.Context, host *hostConnection, warnOfMissingValues bool) sshCredentials {
 	sshUser := host.user
 	if sshUser == "" {
 		// Use root as default user
@@ -755,12 +799,13 @@ func (e *executionCommon) getSSHCredentials(ctx context.Context, host hostConnec
 	sshPrivateKey := host.privateKey
 	if sshPrivateKey == "" && sshPassword == "" {
 		sshPrivateKey = "~/.ssh/yorc.pem"
+		host.privateKey = sshPrivateKey
 		events.WithContextOptionalFields(ctx).NewLogEntry(events.LogLevelWARN, e.deploymentID).RegisterAsString("Ansible provisioning: Missing ssh password or private key information, trying to use default private key ~/.ssh/yorc.pem.")
 	}
 	return sshCredentials{user: sshUser, password: sshPassword, privateKey: sshPrivateKey}
 }
 
-func (e *executionCommon) generateHostConnection(ctx context.Context, buffer *bytes.Buffer, host hostConnection) error {
+func (e *executionCommon) generateHostConnection(ctx context.Context, buffer *bytes.Buffer, host *hostConnection) error {
 	buffer.WriteString(host.host)
 	if e.isOrchestratorOperation {
 		err := e.generateHostConnectionForOrchestratorOperation(ctx, buffer)
@@ -771,9 +816,16 @@ func (e *executionCommon) generateHostConnection(ctx context.Context, buffer *by
 		sshCredentials := e.getSSHCredentials(ctx, host, true)
 		buffer.WriteString(fmt.Sprintf(" ansible_ssh_user=%s ansible_ssh_common_args=\"-o ConnectionAttempts=20\"", sshCredentials.user))
 		// Set with priority private key against password
-		if sshCredentials.privateKey != "" {
-			// TODO if not a path store it somewhere
-			// Note whould be better if we can use it directly https://github.com/ansible/ansible/issues/22382
+		if e.cfg.DisableSSHAgent && sshCredentials.privateKey != "" {
+			// check privateKey's a valid path
+			if is, err := pathutil.IsValidPath(sshCredentials.privateKey); err != nil || !is {
+				// Truncate it if it's a private key
+				ufo := sshCredentials.privateKey
+				if _, err = ssh.ParsePrivateKey([]byte(sshCredentials.privateKey)); err == nil {
+					ufo = stringutil.Truncate(sshCredentials.privateKey, 20)
+				}
+				return errors.Errorf("%q is not a valid path", ufo)
+			}
 			buffer.WriteString(fmt.Sprintf(" ansible_ssh_private_key_file=%s", sshCredentials.privateKey))
 		} else if sshCredentials.password != "" {
 			// TODO use vault
@@ -799,7 +851,7 @@ func (e *executionCommon) executeWithCurrentInstance(ctx context.Context, retry 
 		return err
 	}
 
-	ansibleRecipePath := filepath.Join(ansiblePath, e.taskID, e.NodeName)
+	ansibleRecipePath := filepath.Join(ansiblePath, stringutil.UniqueTimestampedName(e.taskID+"_", ""), e.NodeName)
 	if e.operation.RelOp.IsRelationshipOperation {
 		ansibleRecipePath = filepath.Join(ansibleRecipePath, e.relationshipType, e.operation.RelOp.TargetRelationship, e.operation.Name, currentInstance)
 	} else {
@@ -835,7 +887,6 @@ func (e *executionCommon) executeWithCurrentInstance(ctx context.Context, retry 
 		return err
 	}
 
-	log.Debugf("Generating hosts files hosts: %+v ", e.hosts)
 	var buffer bytes.Buffer
 	buffer.WriteString("[all]\n")
 	for instanceName, host := range e.hosts {
@@ -998,8 +1049,12 @@ func (e *executionCommon) executeWithCurrentInstance(ctx context.Context, retry 
 				if instanceID != fileInstanceID {
 					continue
 				}
-				if err = consulutil.StoreConsulKeyAsString(path.Join(consulutil.DeploymentKVPrefix, e.deploymentID, "topology", e.Outputs[line[0]]), line[1]); err != nil {
-					return err
+				if e.Outputs[line[0]] != taskContextOutput {
+					if err = consulutil.StoreConsulKeyAsString(path.Join(consulutil.DeploymentKVPrefix, e.deploymentID, "topology", e.Outputs[line[0]]), line[1]); err != nil {
+						return err
+					}
+				} else {
+					tasks.SetTaskData(e.kv, e.taskID, e.NodeName+"-"+instanceID+"-"+strings.Join(splits[0:len(splits)-1], "_"), line[1])
 				}
 			}
 		}
@@ -1041,7 +1096,8 @@ func (e *executionCommon) getInstanceIDFromHost(host string) (string, error) {
 func (e *executionCommon) executePlaybook(ctx context.Context, retry bool,
 	ansibleRecipePath string, handler outputHandler) error {
 	cmd := executil.Command(ctx, "ansible-playbook", "-i", "hosts", "run.ansible.yml", "--vault-password-file", filepath.Join(ansibleRecipePath, ".vault_pass"))
-	cmd.Env = append(os.Environ(), "VAULT_PASSWORD="+e.vaultToken)
+	env := os.Environ()
+	env = append(env, "VAULT_PASSWORD="+e.vaultToken)
 	if _, err := os.Stat(filepath.Join(ansibleRecipePath, "run.ansible.retry")); retry && (err == nil || !os.IsNotExist(err)) {
 		cmd.Args = append(cmd.Args, "--limit", filepath.Join("@", ansibleRecipePath, "run.ansible.retry"))
 	}
@@ -1059,8 +1115,31 @@ func (e *executionCommon) executePlaybook(ctx context.Context, retry bool,
 		} else {
 			cmd.Args = append(cmd.Args, "-c", "paramiko")
 		}
+
+		if !e.cfg.DisableSSHAgent {
+			// Check if SSHAgent is needed
+			sshAgent, err := e.configureSSHAgent(ctx)
+			if err != nil {
+				return errors.Wrap(err, "failed to configure SSH agent for ansible-playbook execution")
+			}
+			if sshAgent != nil {
+				log.Debugf("Add SSH_AUTH_SOCK env var for ssh-agent")
+				env = append(env, "SSH_AUTH_SOCK="+sshAgent.Socket)
+				defer func() {
+					err = sshAgent.RemoveAllKeys()
+					if err != nil {
+						log.Debugf("Warning: failed to remove all SSH agents keys due to error:%+v", err)
+					}
+					err = sshAgent.Stop()
+					if err != nil {
+						log.Debugf("Warning: failed to stop SSH agent due to error:%+v", err)
+					}
+				}()
+			}
+		}
 	}
 	cmd.Dir = ansibleRecipePath
+	cmd.Env = env
 	errbuf := events.NewBufferedLogEntryWriter()
 	cmd.Stderr = errbuf
 
@@ -1083,6 +1162,32 @@ func (e *executionCommon) executePlaybook(ctx context.Context, retry bool,
 		return e.checkAnsibleRetriableError(ctx, err)
 	}
 	return nil
+}
+
+func (e *executionCommon) configureSSHAgent(ctx context.Context) (*sshutil.SSHAgent, error) {
+	var addSSHAgent bool
+	for _, host := range e.hosts {
+		if host.privateKey != "" {
+			addSSHAgent = true
+			break
+		}
+	}
+	if !addSSHAgent {
+		return nil, nil
+	}
+
+	agent, err := sshutil.NewSSHAgent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, host := range e.hosts {
+		if host.privateKey != "" {
+			if err = agent.AddKey(host.privateKey, 3600); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return agent, nil
 }
 
 func buildArchive(rootDir, artifactDir, tarPath string) error {

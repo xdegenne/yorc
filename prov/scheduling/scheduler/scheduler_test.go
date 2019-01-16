@@ -15,14 +15,18 @@
 package scheduler
 
 import (
+	"path"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/ystia/yorc/tasks"
+
 	"github.com/hashicorp/consul/api"
 	"github.com/stretchr/testify/require"
 	"github.com/ystia/yorc/helper/consulutil"
 	"github.com/ystia/yorc/prov"
 	"github.com/ystia/yorc/prov/scheduling"
-	"path"
-	"testing"
-	"time"
 )
 
 func testRegisterAction(t *testing.T, client *api.Client) {
@@ -57,6 +61,31 @@ func testProceedScheduledAction(t *testing.T, client *api.Client) {
 	require.Nil(t, err, "Unexpected error while registering action")
 	require.NotEmpty(t, id, "id is not expected to be empty")
 
+	closeCh := make(chan struct{})
+	defer close(closeCh)
+	go func() {
+		var latestIndex uint64
+		for {
+			select {
+			case <-closeCh:
+				return
+			default:
+			}
+			keys, meta, err := client.KV().Keys(consulutil.TasksPrefix+"/", "/", &api.QueryOptions{WaitIndex: latestIndex})
+			if err != nil {
+				t.Logf("%v", err)
+				continue
+			}
+			if latestIndex == meta.LastIndex {
+				continue
+			}
+			for _, key := range keys {
+				// set all tasks to done asap to reschedule them
+				client.KV().Put(&api.KVPair{Key: path.Join(key, "status"), Value: []byte(strconv.Itoa(int(tasks.TaskStatusDONE)))}, nil)
+			}
+		}
+	}()
+
 	var check = func(index, cpt int) {
 		cpt++
 		// Check related tasks have been created
@@ -67,22 +96,22 @@ func testProceedScheduledAction(t *testing.T, client *api.Client) {
 			kvp, _, err := client.KV().Get(key+"targetId", nil)
 			if kvp != nil && string(kvp.Value) == deploymentID {
 				depTask++
-				kvp, _, err = client.KV().Get(key+"actionType", nil)
+				kvp, _, err = client.KV().Get(key+"data/actionType", nil)
 				require.Nil(t, err, "Unexpected error while getting action type")
 				require.NotNil(t, kvp, "kvp is nil for action type")
 				require.Equal(t, string(kvp.Value), actionType)
 
-				kvp, _, err = client.KV().Get(key+"key1", nil)
+				kvp, _, err = client.KV().Get(key+"data/key1", nil)
 				require.Nil(t, err, "Unexpected error while getting key1")
 				require.NotNil(t, kvp, "kvp is nil for key1")
 				require.Equal(t, string(kvp.Value), "val1")
 
-				kvp, _, err = client.KV().Get(key+"key2", nil)
+				kvp, _, err = client.KV().Get(key+"data/key2", nil)
 				require.Nil(t, err, "Unexpected error while getting key3")
 				require.NotNil(t, kvp, "kvp is nil for key2")
 				require.Equal(t, string(kvp.Value), "val2")
 
-				kvp, _, err = client.KV().Get(key+"key3", nil)
+				kvp, _, err = client.KV().Get(key+"data/key3", nil)
 				require.Nil(t, err, "Unexpected error while getting key3")
 				require.NotNil(t, kvp, "kvp is nil for key3")
 				require.Equal(t, string(kvp.Value), "val3")

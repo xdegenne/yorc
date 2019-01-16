@@ -2,6 +2,84 @@
 
 ## UNRELEASED
 
+### BUG FIXES
+
+* K8S jobs namespace should not be removed if its provided ([GH-245](https://github.com/ystia/yorc/issues/245))
+* Unable to purge an application that appears in the list ([GH-238](https://github.com/ystia/yorc/issues/238))
+
+## 3.1.0 (December 20, 2018)
+
+### BUG FIXES
+
+* When scaling down instances are not cleaned from consul ([GH-257](https://github.com/ystia/yorc/issues/257))
+* Yorc bootstrap fails if downloadable URLs are too long ([GH-247](https://github.com/ystia/yorc/issues/247))
+
+### ENHANCEMENTS
+
+* Increase default workers number per Yorc server from `3` to `30` ([GH-244](https://github.com/ystia/yorc/issues/244))
+
+### BUG FIXES
+
+* Bootstrap fails on Red Hat Enterprise Linux 7.5 ([GH-252](https://github.com/ystia/yorc/issues/252))
+
+## 3.1.0-RC2 (December 18, 2018)
+
+### DEPENDENCIES
+
+* Technical update to use Alien4Cloud 2.1.0 final version (Used in bootstrap)
+
+## 3.1.0-RC1 (December 17, 2018)
+
+### ENHANCEMENTS
+
+* Support Jobs lifecycle enhancements (new operations `submit`, `run`, `cancel`) ([GH-196](https://github.com/ystia/yorc/issues/196))
+* Forbid the parallel execution of several scheduled actions. This is for instance used for the asynchronous run operation of Jobs. This will prevent a same action to be scheduled in parallel (for jobs it will prevent checking and doing same actions several times) ([GH-230](https://github.com/ystia/yorc/issues/230))
+* Generate Alien 2.1-compatible events ([GH-148](https://github.com/ystia/yorc/issues/148))
+
+### BUG FIXES
+
+* No output properties for services on GKE ([GH-214](https://github.com/ystia/yorc/issues/214))
+* K8S service IP missing in runtime view when deploying on GKE ([GH-215](https://github.com/ystia/yorc/issues/215))
+* Bootstrap of HA setup fails on GCP, at step configuring the NFS Client component ([GH-218](https://github.com/ystia/yorc/issues/218))
+* Fix issue when default yorc.pem is used by Ansible with ssh-agent ([GH-233](https://github.com/ystia/yorc/issues/233))
+* Publish workflow events when custom workflow is finished ([GH-234](https://github.com/ystia/yorc/issues/234))
+* Bootstrap without internet access fails to get terraform plugins for local yorc ([GH-239](https://github.com/ystia/yorc/issues/239))
+* CUDA_VISIBLE_DEVICES contains some unwanted unprintable characters [GH-210](https://github.com/ystia/yorc/issues/210))
+
+## 3.1.0-M7 (December 07, 2018)
+
+### DEPENDENCIES
+
+* The orchestrator requires now at least Ansible 2.7.2 (upgrade from 2.6.3 introduced in [GH-194](https://github.com/ystia/yorc/issues/194))
+
+### FEATURES
+
+* Allow to bootstrap a full stack Alien4Cloud/Yorc setup using yorc CLI ([GH-131](https://github.com/ystia/yorc/issues/131))
+
+### ENHANCEMENTS
+
+* Use ssh-agent to not write ssh private keys on disk ([GH-201](https://github.com/ystia/yorc/issues/201))
+
+### BUG FIXES
+
+* ConnectTo relationship not working for kubernetes topologies ([GH-212](https://github.com/ystia/yorc/issues/212))
+
+## 3.1.0-M6 (November 16, 2018)
+
+### FEATURES
+
+* Support GCE virtual private networks (VPC) ([GH-80](https://github.com/ystia/yorc/issues/80))
+* Support Kubernetes Jobs. ([GH-86](https://github.com/ystia/yorc/issues/86))
+
+### ENHANCEMENTS
+
+* Allow user to provide an already existing namespace to use when creating Kubernetes resources ([GH-76](https://github.com/ystia/yorc/issues/76))
+
+### BUG FIXES
+
+* Generate unique names for GCP resources ([GH-177](https://github.com/ystia/yorc/issues/177))
+* Need a HOST public_ip_address attribute on Hosts Pool compute nodes ([GH-199](https://github.com/ystia/yorc/issues/199))
+
 ## 3.1.0-M5 (October 26, 2018)
 
 ### FEATURES

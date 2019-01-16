@@ -16,17 +16,18 @@ package collector
 
 import (
 	"fmt"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 	"github.com/ystia/yorc/deployments"
 	"github.com/ystia/yorc/helper/consulutil"
 	"github.com/ystia/yorc/tasks"
-	"github.com/ystia/yorc/tasks/workflow"
-	"path"
-	"strconv"
-	"strings"
-	"time"
+	"github.com/ystia/yorc/tasks/workflow/builder"
 )
 
 // A Collector is responsible for registering new tasks/workflows/executions
@@ -105,7 +106,8 @@ func (c *Collector) ResumeTask(taskID string) error {
 		return err
 	}
 
-	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, tasks.TaskStatusINITIAL.String())
+	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusINITIAL.String())
+	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusRUNNING.String())
 	return nil
 }
 
@@ -154,7 +156,7 @@ func (c *Collector) registerTask(targetID string, taskType tasks.TaskType, data 
 		for k, v := range data {
 			taskOps = append(taskOps, &api.KVTxnOp{
 				Verb:  api.KVSet,
-				Key:   path.Join(taskPath, k),
+				Key:   path.Join(taskPath, "data", k),
 				Value: []byte(v),
 			})
 		}
@@ -173,7 +175,8 @@ func (c *Collector) registerTask(targetID string, taskType tasks.TaskType, data 
 		return "", err
 	}
 
-	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, tasks.TaskStatusINITIAL.String())
+	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusINITIAL.String())
+	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusRUNNING.String())
 	return taskID, nil
 }
 
@@ -181,7 +184,7 @@ func (c *Collector) prepareForRegistration(operations api.KVTxnOps, taskType tas
 	// Register step tasks for each step in case of workflow
 	// Add executions for each initial steps
 	if workflowName != "" {
-		stepOps, err := workflow.BuildInitExecutionOperations(c.consulClient.KV(), targetID, taskID, workflowName, registerWorkflow)
+		stepOps, err := builder.BuildInitExecutionOperations(c.consulClient.KV(), targetID, taskID, workflowName, registerWorkflow)
 		if err != nil {
 			return err
 		}

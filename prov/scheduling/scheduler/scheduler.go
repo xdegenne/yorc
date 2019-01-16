@@ -15,16 +15,19 @@
 package scheduler
 
 import (
-	"github.com/hashicorp/consul/api"
-	"github.com/pkg/errors"
-	"github.com/ystia/yorc/config"
-	"github.com/ystia/yorc/helper/consulutil"
-	"github.com/ystia/yorc/log"
-	"github.com/ystia/yorc/tasks/collector"
+	"encoding/json"
 	"path"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/consul/api"
+	"github.com/pkg/errors"
+
+	"github.com/ystia/yorc/config"
+	"github.com/ystia/yorc/helper/consulutil"
+	"github.com/ystia/yorc/log"
+	"github.com/ystia/yorc/tasks/collector"
 )
 
 var defaultScheduler *scheduler
@@ -134,20 +137,21 @@ func (sc *scheduler) startScheduling() {
 						actionToStop.stop()
 						// Remove it from actions
 						delete(sc.actions, id)
-						// Unregister it definitively
-						sc.unregisterAction(id)
 					}
+					// Unregister it definitively
+					sc.unregisterAction(id)
 					continue
 				}
-				sca, err := sc.buildScheduledAction(id)
-				if err != nil {
-					handleError(err)
-					continue
-				}
+
 				// Store the action if not already present and start it
 				_, is := sc.actions[id]
 				if !is {
 					log.Debugf("start action id:%q", id)
+					sca, err := sc.buildScheduledAction(id)
+					if err != nil {
+						handleError(err)
+						continue
+					}
 					sc.actions[id] = sca
 					sca.start()
 				}
@@ -172,39 +176,66 @@ func (sc *scheduler) stopScheduling() {
 }
 
 func (sc *scheduler) buildScheduledAction(id string) (*scheduledAction, error) {
-	kvps, _, err := sc.cc.KV().List(path.Join(consulutil.SchedulingKVPrefix, "actions", id), nil)
+	sca := &scheduledAction{}
+	sca.kv = sc.cc.KV()
+	sca.ID = id
+
+	actionPrefix := path.Join(consulutil.SchedulingKVPrefix, "actions", id)
+	kvp, _, err := sc.cc.KV().Get(path.Join(actionPrefix, "deploymentID"), nil)
 	if err != nil {
 		return nil, err
 	}
-	if len(kvps) == 0 {
-		return nil, errors.Errorf("No scheduled action found with id:%q", id)
+	if kvp != nil {
+		sca.deploymentID = string(kvp.Value)
 	}
-	sca := &scheduledAction{}
-	sca.ID = id
-	sca.Data = make(map[string]string)
+	kvp, _, err = sc.cc.KV().Get(path.Join(actionPrefix, "type"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if kvp != nil {
+		sca.ActionType = string(kvp.Value)
+	}
+	kvp, _, err = sc.cc.KV().Get(path.Join(actionPrefix, "interval"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if kvp == nil || len(kvp.Value) == 0 {
+		return nil, errors.Errorf("Missing interval for action: %q", id)
+	}
+	d, err := time.ParseDuration(string(kvp.Value))
+	if err != nil {
+		return nil, err
+	}
+	sca.timeInterval = d
+	kvp, _, err = sc.cc.KV().Get(path.Join(actionPrefix, "async_op"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if kvp != nil && len(kvp.Value) > 0 {
+		sca.asyncOperationString = string(kvp.Value)
+		err = json.Unmarshal(kvp.Value, &sca.AsyncOperation)
+		if err != nil {
+			return nil, err
+		}
+	}
+	kvp, _, err = sc.cc.KV().Get(path.Join(actionPrefix, "latestTaskID"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if kvp != nil && len(kvp.Value) > 0 {
+		sca.latestTaskID = string(kvp.Value)
+	}
+
+	kvps, _, err := sc.cc.KV().List(path.Join(consulutil.SchedulingKVPrefix, "actions", id, "data"), nil)
+	if err != nil {
+		return nil, err
+	}
+	sca.Data = make(map[string]string, len(kvps))
+
 	for _, kvp := range kvps {
 		key := path.Base(kvp.Key)
-		switch key {
-		case "deploymentID":
-			if kvp != nil && len(kvp.Value) > 0 {
-				sca.deploymentID = string(kvp.Value)
-			}
-		case "type":
-			if kvp != nil && len(kvp.Value) > 0 {
-				sca.ActionType = string(kvp.Value)
-			}
-		case "interval":
-			if kvp != nil && len(kvp.Value) > 0 {
-				d, err := time.ParseDuration(string(kvp.Value))
-				if err != nil {
-					return nil, err
-				}
-				sca.timeInterval = d
-			}
-		default:
-			if kvp != nil && len(kvp.Value) > 0 {
-				sca.Data[key] = string(kvp.Value)
-			}
+		if len(kvp.Value) > 0 {
+			sca.Data[key] = string(kvp.Value)
 		}
 	}
 	return sca, nil

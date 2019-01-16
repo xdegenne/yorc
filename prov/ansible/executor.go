@@ -16,7 +16,9 @@ package ansible
 
 import (
 	"context"
+	"encoding/json"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -24,10 +26,10 @@ import (
 
 	"github.com/ystia/yorc/config"
 	"github.com/ystia/yorc/events"
-	"github.com/ystia/yorc/helper/stringutil"
 	"github.com/ystia/yorc/log"
 	"github.com/ystia/yorc/prov"
 	"github.com/ystia/yorc/tasks"
+	"github.com/ystia/yorc/tosca"
 )
 
 type defaultExecutor struct {
@@ -35,19 +37,39 @@ type defaultExecutor struct {
 	cli *client.Client
 }
 
-// NewExecutor returns an Executor
-func NewExecutor() prov.OperationExecutor {
+func newExecutor() *defaultExecutor {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		err = errors.Wrap(err, "failed to create docker execution client, docker sandboxing for operation hosted on orchestrator is disabled")
 		log.Printf("%v", err)
 	}
-
 	return &defaultExecutor{r: rand.New(rand.NewSource(time.Now().UnixNano())), cli: cli}
 }
 
 func (e *defaultExecutor) ExecAsyncOperation(ctx context.Context, conf config.Configuration, taskID, deploymentID, nodeName string, operation prov.Operation, stepName string) (*prov.Action, time.Duration, error) {
-	return nil, 0, errors.New("asynchronous operation is not yet handled by this executor")
+	if strings.ToLower(operation.Name) != strings.ToLower(tosca.RunnableRunOperationName) {
+		return nil, 0, errors.Errorf("%q operation is not supported by the Ansible asynchronous executor only %q is.", operation.Name, tosca.RunnableRunOperationName)
+	}
+
+	jsonOp, err := json.Marshal(operation)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to marshal asynchronous operation")
+	}
+	// Fill all used data for job monitoring
+	data := make(map[string]string)
+	data["originalTaskID"] = taskID
+	data["nodeName"] = nodeName
+	data["operation"] = string(jsonOp)
+	// TODO deal with outputs?
+	// data["outputs"] = strings.Join(e.jobInfo.outputs, ",")
+	checkPeriod := conf.Ansible.JobsChecksPeriod
+	if checkPeriod <= 0 {
+		checkPeriod = 15 * time.Second
+		log.Debugf("\"job_monitoring_time_interval\" configuration parameter is missing in Ansible configuration. Using default %s.", checkPeriod)
+	}
+
+	return &prov.Action{ActionType: "ansible-job-monitoring", Data: data}, checkPeriod, nil
+
 }
 
 func (e *defaultExecutor) ExecOperation(ctx context.Context, conf config.Configuration, taskID, deploymentID, nodeName string, operation prov.Operation) error {
@@ -56,16 +78,6 @@ func (e *defaultExecutor) ExecOperation(ctx context.Context, conf config.Configu
 		return err
 	}
 	kv := consulClient.KV()
-
-	logOptFields, ok := events.FromContext(ctx)
-	if !ok {
-		return errors.New("Missing context log fields")
-	}
-	logOptFields[events.NodeID] = nodeName
-	logOptFields[events.ExecutionID] = taskID
-	logOptFields[events.OperationName] = stringutil.GetLastElement(operation.Name, ".")
-	logOptFields[events.InterfaceName] = stringutil.GetAllExceptLastElement(operation.Name, ".")
-	ctx = events.NewContext(ctx, logOptFields)
 
 	exec, err := newExecution(ctx, kv, conf, taskID, deploymentID, nodeName, operation, e.cli)
 	if err != nil {

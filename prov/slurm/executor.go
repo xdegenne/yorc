@@ -18,12 +18,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
 	"sync"
 	"time"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ystia/yorc/config"
 	"github.com/ystia/yorc/deployments"
 	"github.com/ystia/yorc/events"
@@ -32,12 +33,10 @@ import (
 	"github.com/ystia/yorc/prov"
 	"github.com/ystia/yorc/tasks"
 	"github.com/ystia/yorc/tosca"
-	"golang.org/x/sync/errgroup"
 )
 
 type defaultExecutor struct {
-	generator defaultGenerator
-	client    *sshutil.SSHClient
+	client *sshutil.SSHClient
 }
 
 type allocationResponse struct {
@@ -48,18 +47,26 @@ type allocationResponse struct {
 const reSallocPending = `^salloc: Pending job allocation (\d+)`
 const reSallocGranted = `^salloc: Granted job allocation (\d+)`
 
-func newExecutor(generator defaultGenerator) prov.DelegateExecutor {
-	return &defaultExecutor{generator: generator}
+func getJobExecution(conf config.Configuration, taskID, deploymentID, nodeName string, operation prov.Operation, stepName string) (execution, error) {
+	consulClient, err := conf.GetConsulClient()
+	if err != nil {
+		return nil, err
+	}
+	kv := consulClient.KV()
+	isJob, err := deployments.IsNodeDerivedFrom(kv, deploymentID, nodeName, "yorc.nodes.slurm.Job")
+	if err != nil {
+		return nil, err
+	}
+	if !isJob {
+		return nil, errors.Errorf("operation %q supported only for nodes derived from %q", operation.Name, "yorc.nodes.slurm.Job")
+	}
+	return newExecution(kv, conf, taskID, deploymentID, nodeName, stepName, operation)
 }
 
 func (e *defaultExecutor) ExecAsyncOperation(ctx context.Context, conf config.Configuration, taskID, deploymentID, nodeName string, operation prov.Operation, stepName string) (*prov.Action, time.Duration, error) {
-	log.Debugf("Slurm defaultExecutor: Execute the operation async:%+v", operation)
-	consulClient, err := conf.GetConsulClient()
-	if err != nil {
-		return nil, 0, err
-	}
-	kv := consulClient.KV()
-	exec, err := newExecution(kv, conf, taskID, deploymentID, nodeName, stepName, operation)
+	log.Debugf("Slurm defaultExecutor: Execute the operation async: %+v", operation)
+
+	exec, err := getJobExecution(conf, taskID, deploymentID, nodeName, operation, stepName)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -67,7 +74,13 @@ func (e *defaultExecutor) ExecAsyncOperation(ctx context.Context, conf config.Co
 }
 
 func (e *defaultExecutor) ExecOperation(ctx context.Context, conf config.Configuration, taskID, deploymentID, nodeName string, operation prov.Operation) error {
-	return errors.New("only asynchronous operations are handled by this executor")
+	log.Debugf("Slurm defaultExecutor: Execute the operation: %+v", operation)
+
+	exec, err := getJobExecution(conf, taskID, deploymentID, nodeName, operation, "")
+	if err != nil {
+		return err
+	}
+	return exec.execute(ctx)
 }
 
 func (e *defaultExecutor) ExecDelegate(ctx context.Context, cfg config.Configuration, taskID, deploymentID, nodeName, delegateOperation string) error {
@@ -76,15 +89,6 @@ func (e *defaultExecutor) ExecDelegate(ctx context.Context, cfg config.Configura
 		return err
 	}
 	kv := consulClient.KV()
-	logOptFields, ok := events.FromContext(ctx)
-	if !ok {
-		return errors.New("Missing contextual log optionnal fields")
-	}
-	logOptFields[events.NodeID] = nodeName
-	logOptFields[events.ExecutionID] = taskID
-	logOptFields[events.OperationName] = delegateOperation
-	logOptFields[events.InterfaceName] = "delegate"
-	ctx = events.NewContext(ctx, logOptFields)
 
 	instances, err := tasks.GetInstances(kv, taskID, deploymentID, nodeName)
 	if err != nil {
@@ -100,37 +104,37 @@ func (e *defaultExecutor) ExecDelegate(ctx context.Context, cfg config.Configura
 	operation := strings.ToLower(delegateOperation)
 	switch {
 	case operation == "install":
-		err = e.installNode(ctx, kv, cfg, deploymentID, nodeName, instances, logOptFields, operation)
+		err = e.installNode(ctx, kv, cfg, deploymentID, nodeName, instances, operation)
 	case operation == "uninstall":
-		err = e.uninstallNode(ctx, kv, cfg, deploymentID, nodeName, instances, logOptFields, operation)
+		err = e.uninstallNode(ctx, kv, cfg, deploymentID, nodeName, instances, operation)
 	default:
 		return errors.Errorf("Unsupported operation %q", delegateOperation)
 	}
 	return err
 }
 
-func (e *defaultExecutor) installNode(ctx context.Context, kv *api.KV, cfg config.Configuration, deploymentID, nodeName string, instances []string, logOptFields events.LogOptionalFields, operation string) error {
+func (e *defaultExecutor) installNode(ctx context.Context, kv *api.KV, cfg config.Configuration, deploymentID, nodeName string, instances []string, operation string) error {
 	for _, instance := range instances {
 		err := deployments.SetInstanceStateWithContextualLogs(events.AddLogOptionalFields(ctx, events.LogOptionalFields{events.InstanceID: instance}), kv, deploymentID, nodeName, instance, tosca.NodeStateCreating)
 		if err != nil {
 			return err
 		}
 	}
-	infra, err := e.generator.generateInfrastructure(ctx, kv, cfg, deploymentID, nodeName, operation)
+	infra, err := generateInfrastructure(ctx, kv, cfg, deploymentID, nodeName, operation)
 	if err != nil {
 		return err
 	}
 	return e.createInfrastructure(ctx, kv, cfg, deploymentID, nodeName, infra)
 }
 
-func (e *defaultExecutor) uninstallNode(ctx context.Context, kv *api.KV, cfg config.Configuration, deploymentID, nodeName string, instances []string, logOptFields events.LogOptionalFields, operation string) error {
+func (e *defaultExecutor) uninstallNode(ctx context.Context, kv *api.KV, cfg config.Configuration, deploymentID, nodeName string, instances []string, operation string) error {
 	for _, instance := range instances {
 		err := deployments.SetInstanceStateWithContextualLogs(events.AddLogOptionalFields(ctx, events.LogOptionalFields{events.InstanceID: instance}), kv, deploymentID, nodeName, instance, tosca.NodeStateDeleting)
 		if err != nil {
 			return err
 		}
 	}
-	infra, err := e.generator.generateInfrastructure(ctx, kv, cfg, deploymentID, nodeName, operation)
+	infra, err := generateInfrastructure(ctx, kv, cfg, deploymentID, nodeName, operation)
 	if err != nil {
 		return err
 	}

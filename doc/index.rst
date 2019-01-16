@@ -27,6 +27,7 @@ Yorc |release| Documentation
    :maxdepth: 2
 
    install
+   bootstrap
    configuration
    run
    cli
@@ -39,4 +40,5 @@ Yorc |release| Documentation
    telemetry
    performance
    upgrade
+   issues
 

@@ -18,6 +18,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -168,6 +169,7 @@ func TestConfigFile(t *testing.T) {
 				KeepOperationRemotePath: true,
 				ArchiveArtifacts:        true,
 				CacheFacts:              true,
+				JobsChecksPeriod:        15 * time.Second,
 			},
 			ConsulConfig: config.Consul{
 				Token:          "testToken",
@@ -191,6 +193,7 @@ func TestConfigFile(t *testing.T) {
 				KeepOperationRemotePath: true,
 				ArchiveArtifacts:        true,
 				CacheFacts:              true,
+				JobsChecksPeriod:        15 * time.Second,
 			},
 			ConsulConfig: config.Consul{
 				Token:          "testToken2",
@@ -213,7 +216,7 @@ func TestConfigFile(t *testing.T) {
 			setConfig()
 			viper.SetConfigFile(fileToExpectedValue.FileName)
 			initConfig()
-			testConfig := getConfig()
+			testConfig := GetConfig()
 
 			assert.Equal(t, fileToExpectedValue.AnsibleConfig, testConfig.Ansible, "Ansible configuration differs from value defined in config file %s", fileToExpectedValue.FileName)
 			assert.Equal(t, fileToExpectedValue.ConsulConfig, testConfig.Consul, "Consul configuration differs from value defined in config file %s", fileToExpectedValue.FileName)
@@ -230,12 +233,13 @@ func TestAnsibleDefaultValues(t *testing.T) {
 		ConnectionRetries:       5,
 		OperationRemoteBaseDir:  ".yorc",
 		KeepOperationRemotePath: false,
+		JobsChecksPeriod:        15 * time.Second,
 	}
 
 	testResetConfig()
 	setConfig()
 	initConfig()
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedAnsibleConfig, testConfig.Ansible, "Ansible configuration differs from expected default configuration")
 }
@@ -259,7 +263,7 @@ func TestConsulDefaultValues(t *testing.T) {
 	testResetConfig()
 	setConfig()
 	initConfig()
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedConsulConfig, testConfig.Consul, "Consul configuration differs from expected default configuration")
 }
@@ -272,6 +276,7 @@ func TestAnsibleEnvVariables(t *testing.T) {
 		ConnectionRetries:       12,
 		OperationRemoteBaseDir:  "testEnvBaseDir",
 		KeepOperationRemotePath: true,
+		JobsChecksPeriod:        15 * time.Second,
 	}
 
 	// Set Ansible configuration environment ariables
@@ -284,7 +289,7 @@ func TestAnsibleEnvVariables(t *testing.T) {
 	testResetConfig()
 	setConfig()
 	initConfig()
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedAnsibleConfig, testConfig.Ansible, "Ansible configuration differs from expected environment configuration")
 
@@ -327,7 +332,7 @@ func TestConsulEnvVariables(t *testing.T) {
 	testResetConfig()
 	setConfig()
 	initConfig()
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedConsulConfig, testConfig.Consul, "Consul configuration differs from expected environment configuration")
 
@@ -353,6 +358,7 @@ func TestAnsiblePersistentFlags(t *testing.T) {
 		ConnectionRetries:       15,
 		OperationRemoteBaseDir:  "testPFlagBaseDir",
 		KeepOperationRemotePath: true,
+		JobsChecksPeriod:        15 * time.Second,
 	}
 
 	ansiblePFlagConfiguration := map[string]string{
@@ -374,7 +380,7 @@ func TestAnsiblePersistentFlags(t *testing.T) {
 		require.NoError(t, err, "Could not set persistent flag %s", key)
 	}
 
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedAnsibleConfig, testConfig.Ansible, "Ansible configuration differs from persistent flags settings")
 }
@@ -419,7 +425,7 @@ func TestConsulPersistentFlags(t *testing.T) {
 		require.NoError(t, err, "Could not set persistent flag %s", key)
 	}
 
-	testConfig := getConfig()
+	testConfig := GetConfig()
 
 	assert.Equal(t, expectedConsulConfig, testConfig.Consul, "Consul configuration differs from persistent flags settings")
 }

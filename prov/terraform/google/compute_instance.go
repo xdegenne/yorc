@@ -17,10 +17,11 @@ package google
 import (
 	"context"
 	"fmt"
-	"github.com/ystia/yorc/log"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/ystia/yorc/log"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
@@ -28,13 +29,17 @@ import (
 	"github.com/ystia/yorc/config"
 	"github.com/ystia/yorc/deployments"
 	"github.com/ystia/yorc/helper/consulutil"
+	"github.com/ystia/yorc/helper/pathutil"
+	"github.com/ystia/yorc/helper/sshutil"
+	"github.com/ystia/yorc/helper/stringutil"
 	"github.com/ystia/yorc/prov/terraform/commons"
+	"golang.org/x/crypto/ssh"
 )
 
 func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.KV,
 	cfg config.Configuration, deploymentID, nodeName, instanceName string, instanceID int,
 	infrastructure *commons.Infrastructure,
-	outputs map[string]string) error {
+	outputs map[string]string, env *[]string, sshAgent *sshutil.SSHAgent) error {
 
 	nodeType, err := deployments.GetNodeType(kv, deploymentID, nodeName)
 	if err != nil {
@@ -51,7 +56,7 @@ func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.K
 	instance := ComputeInstance{}
 
 	// Must be a match of regex '(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)'
-	instance.Name = strings.ToLower(cfg.ResourcesPrefix + nodeName + "-" + instanceName)
+	instance.Name = strings.ToLower(getResourcesPrefix(cfg, deploymentID) + nodeName + "-" + instanceName)
 	instance.Name = strings.Replace(instance.Name, "_", "-", -1)
 
 	// Getting string parameters
@@ -108,7 +113,29 @@ func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.K
 		return err
 	}
 
-	networkInterface := NetworkInterface{Network: "default"}
+	// Define if a private network access is required
+	var netInterfaces []NetworkInterface
+	reqPrivateNetwork, _, err := deployments.HasAnyRequirementFromNodeType(kv, deploymentID, nodeName, "network", "yorc.nodes.google.PrivateNetwork")
+	if err != nil {
+		return err
+	}
+	// Check for subnet otherwise
+	if !reqPrivateNetwork {
+		reqPrivateNetwork, _, err = deployments.HasAnyRequirementFromNodeType(kv, deploymentID, nodeName, "network", "yorc.nodes.google.Subnetwork")
+		if err != nil {
+			return err
+		}
+	}
+	if reqPrivateNetwork {
+		netInterfaces, err = addPrivateNetworkInterfaces(ctx, kv, deploymentID, nodeName)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Create a default private network interface
+		netInterfaces = append(netInterfaces, NetworkInterface{Network: "default"})
+	}
+
 	// Define an external access if there will be an external IP address
 	if !noAddress {
 		hasStaticAddressReq, addressNode, err := deployments.HasAnyRequirementCapability(kv, deploymentID, nodeName, "assignment", "yorc.capabilities.Assignable")
@@ -127,9 +154,9 @@ func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.K
 		// else externalAddress is empty, which means an ephemeral external IP
 		// address will be assigned to the instance
 		accessConfig := AccessConfig{NatIP: externalAddress}
-		networkInterface.AccessConfigs = []AccessConfig{accessConfig}
+		netInterfaces[0].AccessConfigs = []AccessConfig{accessConfig}
 	}
-	instance.NetworkInterfaces = []NetworkInterface{networkInterface}
+	instance.NetworkInterfaces = netInterfaces
 
 	// Scheduling definition
 	var preemptible bool
@@ -170,7 +197,7 @@ func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.K
 	}
 
 	// Get connection info (user, private key)
-	user, privateKeyFilePath, err := commons.GetConnInfoFromEndpointCredentials(kv, deploymentID, nodeName)
+	user, privateKey, err := commons.GetConnInfoFromEndpointCredentials(kv, deploymentID, nodeName)
 	if err != nil {
 		return err
 	}
@@ -258,33 +285,38 @@ func (g *googleGenerator) generateComputeInstance(ctx context.Context, kv *api.K
 
 	commons.AddResource(infrastructure, "consul_keys", instance.Name, &consulKeys)
 
-	// Check the connection in order to be sure that ansible will be able to log on the instance
-	nullResource := commons.Resource{}
-	re := commons.RemoteExec{Inline: []string{`echo "connected"`},
-		Connection: &commons.Connection{User: user, Host: accessIP,
-			PrivateKey: `${file("` + privateKeyFilePath + `")}`}}
-	nullResource.Provisioners = make([]map[string]interface{}, 0)
-	provMap := make(map[string]interface{})
-	provMap["remote-exec"] = re
-	nullResource.Provisioners = append(nullResource.Provisioners, provMap)
-
-	commons.AddResource(infrastructure, "null_resource", instance.Name+"-ConnectionCheck", &nullResource)
+	// Add Connection check
+	if err = commons.AddConnectionCheckResource(infrastructure, user, privateKey, accessIP, instance.Name, env); err != nil {
+		return err
+	}
 
 	// Retrieve devices
-	handleDeviceAttributes(infrastructure, &instance, devices, user, privateKeyFilePath, accessIP)
+	if len(devices) > 0 {
+		// need to use an SSH Agent to make it if allowed by config
+		if !cfg.DisableSSHAgent && sshAgent == nil {
+			sshAgent, err = commons.GetSSHAgent(ctx, privateKey)
+			if err != nil {
+				return err
+			}
+		}
+
+		if err = handleDeviceAttributes(cfg, infrastructure, &instance, devices, user, privateKey, accessIP, sshAgent); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func handleDeviceAttributes(infrastructure *commons.Infrastructure, instance *ComputeInstance, devices []string, user, privateKeyFilePath, accessIP string) {
+func handleDeviceAttributes(cfg config.Configuration, infrastructure *commons.Infrastructure, instance *ComputeInstance, devices []string, user, privateKey, accessIP string, sshAgent *sshutil.SSHAgent) error {
+	var env map[string]interface{}
 	// Retrieve devices {
 	for _, dev := range devices {
 		devResource := commons.Resource{}
 
 		// Remote exec to retrieve the logical device for google device ID and to redirect stdout to file
 		re := commons.RemoteExec{Inline: []string{fmt.Sprintf("readlink -f /dev/disk/by-id/%s > %s", dev, dev)},
-			Connection: &commons.Connection{User: user, Host: accessIP,
-				PrivateKey: `${file("` + privateKeyFilePath + `")}`}}
+			Connection: &commons.Connection{User: user, Host: accessIP, PrivateKey: "${var.private_key}"}}
 		devResource.Provisioners = make([]map[string]interface{}, 0)
 		provMap := make(map[string]interface{})
 		provMap["remote-exec"] = re
@@ -295,10 +327,27 @@ func handleDeviceAttributes(infrastructure *commons.Infrastructure, instance *Co
 		}
 		commons.AddResource(infrastructure, "null_resource", fmt.Sprintf("%s-GetDevice-%s", instance.Name, dev), &devResource)
 
-		// local exec to scp the stdout file locally
-		scpCommand := fmt.Sprintf("scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s %s@%s:~/%s %s", privateKeyFilePath, user, accessIP, dev, dev)
+		// local exec to scp the stdout file locally (use ssh-agent to make it if allowed by config)
+		var scpCommand string
+		if !cfg.DisableSSHAgent {
+			scpCommand = fmt.Sprintf("scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s@%s:~/%s %s", user, accessIP, dev, dev)
+			env = make(map[string]interface{})
+			env["SSH_AUTH_SOCK"] = sshAgent.Socket
+		} else {
+			// check privateKey's a valid path
+			if is, err := pathutil.IsValidPath(privateKey); err != nil || !is {
+				// Truncate it if it's a private key
+				ufo := privateKey
+				if _, err = ssh.ParsePrivateKey([]byte(privateKey)); err == nil {
+					ufo = stringutil.Truncate(privateKey, 20)
+				}
+				return errors.Errorf("%q is not a valid path", ufo)
+			}
+			scpCommand = fmt.Sprintf("scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %s %s@%s:~/%s %s", privateKey, user, accessIP, dev, dev)
+		}
 		loc := commons.LocalExec{
-			Command: scpCommand,
+			Command:     scpCommand,
+			Environment: env,
 		}
 		locMap := make(map[string]interface{})
 		locMap["local-exec"] = loc
@@ -310,8 +359,7 @@ func handleDeviceAttributes(infrastructure *commons.Infrastructure, instance *Co
 		// Remote exec to cleanup  created file
 		cleanResource := commons.Resource{}
 		re = commons.RemoteExec{Inline: []string{fmt.Sprintf("rm -f %s", dev)},
-			Connection: &commons.Connection{User: user, Host: accessIP,
-				PrivateKey: `${file("` + privateKeyFilePath + `")}`}}
+			Connection: &commons.Connection{User: user, Host: accessIP, PrivateKey: "${var.private_key}"}}
 		cleanResource.Provisioners = make([]map[string]interface{}, 0)
 		m := make(map[string]interface{})
 		m["remote-exec"] = re
@@ -322,6 +370,7 @@ func handleDeviceAttributes(infrastructure *commons.Infrastructure, instance *Co
 		consulKeys := commons.ConsulKeys{Keys: []commons.ConsulKey{}}
 		consulKeys.DependsOn = []string{fmt.Sprintf("null_resource.%s", fmt.Sprintf("%s-CopyOut-%s", instance.Name, dev))}
 	}
+	return nil
 }
 
 func attributeLookup(ctx context.Context, kv *api.KV, deploymentID, instanceName, nodeName, attribute string) (string, error) {
@@ -403,7 +452,7 @@ func addAttachedDisks(ctx context.Context, cfg config.Configuration, kv *api.KV,
 			attachedDisk.Mode = modeValue.RawString()
 		}
 
-		attachName := strings.ToLower(cfg.ResourcesPrefix + volumeNodeName + "-" + instanceName + "-to-" + nodeName + "-" + instanceName)
+		attachName := strings.ToLower(getResourcesPrefix(cfg, deploymentID) + volumeNodeName + "-" + instanceName + "-to-" + nodeName + "-" + instanceName)
 		attachName = strings.Replace(attachName, "_", "-", -1)
 		// attachName is used as device name to retrieve device attribute as logical volume name
 		attachedDisk.DeviceName = attachName
@@ -420,4 +469,57 @@ func addAttachedDisks(ctx context.Context, cfg config.Configuration, kv *api.KV,
 		devices = append(devices, device)
 	}
 	return devices, nil
+}
+
+func addPrivateNetworkInterfaces(ctx context.Context, kv *api.KV, deploymentID, nodeName string) ([]NetworkInterface, error) {
+	var netInterfaces []NetworkInterface
+
+	// Check if subnets have been specified by user into network relationship
+	storageKeys, err := deployments.GetRequirementsKeysByTypeForNode(kv, deploymentID, nodeName, "network")
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to add network interfaces for deploymentID:%q, nodeName:%q", deploymentID, nodeName)
+	}
+	for _, storagePrefix := range storageKeys {
+		requirementIndex := deployments.GetRequirementIndexFromRequirementKey(storagePrefix)
+
+		networkNodeName, err := deployments.GetTargetNodeForRequirement(kv, deploymentID, nodeName, requirementIndex)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to add network interfaces for deploymentID:%q, nodeName:%q", deploymentID, nodeName)
+		}
+
+		// Check if node is network or subnet
+		netType, err := deployments.GetNodeType(kv, deploymentID, networkNodeName)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to add network interfaces for deploymentID:%q, nodeName:%q", deploymentID, nodeName)
+		}
+		switch netType {
+		case "yorc.nodes.google.Subnetwork":
+			subnet, err := attributeLookup(ctx, kv, deploymentID, "0", networkNodeName, "subnetwork_name")
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to add network interfaces for deploymentID:%q, nodeName:%q, networkName:%q", deploymentID, nodeName, networkNodeName)
+			}
+			log.Debugf("add network interface with sub-network property:%s", subnet)
+			netInterfaces = append(netInterfaces, NetworkInterface{Subnetwork: subnet})
+		case "yorc.nodes.google.PrivateNetwork":
+			// We mention subnet if provided by network relationship property
+			subRaw, err := deployments.GetRelationshipPropertyValueFromRequirement(kv, deploymentID, nodeName, requirementIndex, "subnet")
+			if err != nil {
+				return nil, err
+			}
+			if subRaw != nil && subRaw.RawString() != "" {
+				log.Debugf("add network interface with user-specified sub-network property:%s", subRaw.RawString())
+				netInterfaces = append(netInterfaces, NetworkInterface{Subnetwork: subRaw.RawString()})
+			} else { // we mention the network
+				network, err := attributeLookup(ctx, kv, deploymentID, "0", networkNodeName, "network_name")
+				if err != nil {
+					return nil, errors.Wrapf(err, "failed to add network interfaces for deploymentID:%q, nodeName:%q, networkName:%q", deploymentID, nodeName, networkNodeName)
+				}
+				log.Debugf("add network interface with network property:%s", network)
+				netInterfaces = append(netInterfaces, NetworkInterface{Network: network})
+			}
+		default:
+			return nil, errors.Errorf("type:%q is not handled for compute network interface addition", netType)
+		}
+	}
+	return netInterfaces, nil
 }
