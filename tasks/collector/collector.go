@@ -15,7 +15,9 @@
 package collector
 
 import (
+	"context"
 	"fmt"
+	"github.com/ystia/yorc/log"
 	"path"
 	"strconv"
 	"strings"
@@ -24,7 +26,9 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
+
 	"github.com/ystia/yorc/deployments"
+	"github.com/ystia/yorc/events"
 	"github.com/ystia/yorc/helper/consulutil"
 	"github.com/ystia/yorc/tasks"
 	"github.com/ystia/yorc/tasks/workflow/builder"
@@ -92,7 +96,7 @@ func (c *Collector) ResumeTask(taskID string) error {
 	}
 	// Set deployment status to initial for some task types
 	switch taskType {
-	case tasks.TaskTypeDeploy, tasks.TaskTypeUnDeploy, tasks.TaskTypeScaleIn, tasks.TaskTypeScaleOut:
+	case tasks.TaskTypeDeploy, tasks.TaskTypeUnDeploy, tasks.TaskTypeScaleIn, tasks.TaskTypeScaleOut, tasks.TaskTypePurge:
 		taskOps = append(taskOps, &api.KVTxnOp{
 			Verb:  api.KVSet,
 			Key:   path.Join(consulutil.DeploymentKVPrefix, targetID, "status"),
@@ -175,8 +179,25 @@ func (c *Collector) registerTask(targetID string, taskType tasks.TaskType, data 
 		return "", err
 	}
 
-	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusINITIAL.String())
-	tasks.EmitTaskEventWithContextualLogs(nil, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusRUNNING.String())
+	ctx := events.NewContext(context.Background(), events.LogOptionalFields{
+		events.WorkFlowID:  workflowName,
+		events.ExecutionID: taskID,
+	})
+
+	if taskType == tasks.TaskTypeUnDeploy || taskType == tasks.TaskTypePurge {
+		status, err := deployments.GetDeploymentStatus(c.consulClient.KV(), targetID)
+		if err != nil {
+			return "", err
+		}
+		if status != deployments.UNDEPLOYED {
+			// Set the deployment status to undeployment in progress right now as the task was registered
+			// But we don't know when it will be processed. This will prevent someone to retry to undeploy as
+			// the status stay in deployed. Doing this will be an error as the task for undeploy is already registered.
+			deployments.SetDeploymentStatus(ctx, c.consulClient.KV(), targetID, deployments.UNDEPLOYMENT_IN_PROGRESS)
+		}
+	}
+	tasks.EmitTaskEventWithContextualLogs(ctx, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusINITIAL.String())
+	tasks.EmitTaskEventWithContextualLogs(ctx, c.consulClient.KV(), targetID, taskID, taskType, workflowName, tasks.TaskStatusRUNNING.String())
 	return taskID, nil
 }
 
@@ -211,5 +232,8 @@ func (c *Collector) prepareForRegistration(operations api.KVTxnOps, taskType tas
 		}
 		return errors.Wrapf(err, "Failed to register task with targetID:%q, taskType:%q due to error:%s", targetID, taskType.String(), strings.Join(errs, ", "))
 	}
+
+	log.Debugf("Registered task %s type %q for target %s\n", taskID, taskType.String(), targetID)
+
 	return nil
 }
