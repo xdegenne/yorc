@@ -26,10 +26,7 @@ import (
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	"github.com/ystia/yorc/v4/log"
 	"regexp"
-	"path/filepath"
-	"fmt"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
-	"strings"
 	"encoding/json"
 	"bytes"
 )
