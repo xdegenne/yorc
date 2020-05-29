@@ -72,7 +72,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 	log.Printf("About to Set data into ES, data: %s", data)
 
-	consulStore.StoreConsulKey(k, data)
+	consulutil.StoreConsulKey(k, data)
 
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
 	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
