@@ -72,8 +72,10 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
+	enrichedData := v.(map[string]interface{})
+	enrichedData["clusterId"] = c.clusterId
 
-	data, err := c.codec.Marshal(v)
+	data, err := c.codec.Marshal(enrichedData)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
