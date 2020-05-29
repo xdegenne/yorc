@@ -35,8 +35,8 @@ type elasticStore struct {
 // NewStore returns a new Consul store
 func NewStore() store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
-	//log.Printf("Here are the ES cluster info : %s", esClient.Info())
-	log.Printf(esClient.Info());
+	log.Printf("Here are the ES cluster info : %+v", esClient.Info())
+	//log.Printf(esClient.Info());
 	return &elasticStore{encoding.JSON, esClient}
 }
 
