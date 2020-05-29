@@ -123,7 +123,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 }
 
 func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
-	log.Printf("Get called")
+	log.Printf("Get called, k: %s, v (%T) : %+v", k, v, v)
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return false, err
 	}
@@ -155,7 +155,7 @@ func (c *elasticStore) Keys(k string) ([]string, error) {
 }
 
 func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) error {
-	log.Printf("Delete called k: %s", k)
+	log.Printf("Delete called k: %s, recursive: %t", k, recursive)
 	return consulutil.Delete(k, recursive)
 }
 
@@ -169,7 +169,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 }
 
 func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
-	log.Printf("List called k: %s", k)
+	log.Printf("List called k: %s, waitIndex: %d, timeout: %s" , k, waitIndex, string(timeout))
 	if err := utils.CheckKey(k); err != nil {
 		return nil, 0, err
 	}
