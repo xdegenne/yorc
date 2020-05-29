@@ -169,7 +169,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 }
 
 func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
-	log.Printf("List called k: %s, waitIndex: %d, timeout: %s" , k, waitIndex, string(timeout))
+	log.Printf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
 	if err := utils.CheckKey(k); err != nil {
 		return nil, 0, err
 	}
