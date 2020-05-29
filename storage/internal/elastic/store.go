@@ -88,6 +88,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
+	log.Printf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
 
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
 	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
