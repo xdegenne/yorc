@@ -77,7 +77,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
-	log.Printf("About to Set data into ES, data: %s", data)
+	log.Printf("About to Set data into ES, data (%T): %s", data, data)
 
 	consulutil.StoreConsulKey(k, data)
 
