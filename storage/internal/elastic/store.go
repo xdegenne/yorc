@@ -55,11 +55,13 @@ func NewStore(cfg config.Configuration) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
 	log.Printf("Here are the ES cluster info")
 	log.Println(esClient.Info());
-	log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
-	var clusterId string = cfg.ClusterID
-	if len(clusterId) != 0 {
-		clusterId = cfg.ServerID
-	}
+	log.Printf("ServerID: %s", cfg.ServerID)
+	var clusterId string = cfg.ServerID
+	//log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
+	//var clusterId string = cfg.ClusterID
+	//if len(clusterId) != 0 {
+	//	clusterId = cfg.ServerID
+	//}
 	return &elasticStore{encoding.JSON, esClient, clusterId}
 }
 
