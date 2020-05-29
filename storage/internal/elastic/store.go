@@ -77,7 +77,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
 	req := esapi.IndexRequest{
 		Index:      indexName,
-		Body:       strings.NewReader(data),
+		Body:       data,
 		Refresh:    "true",
 	}
 	res, err := req.Do(context.Background(), c.esClient)
