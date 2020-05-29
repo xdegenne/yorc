@@ -31,6 +31,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v6/esapi"
 	"strings"
 	"encoding/json"
+	"bytes"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -77,7 +78,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
 	req := esapi.IndexRequest{
 		Index:      indexName,
-		Body:       data,
+		Body:       bytes.NewReader(data),
 		Refresh:    "true",
 	}
 	res, err := req.Do(context.Background(), c.esClient)
