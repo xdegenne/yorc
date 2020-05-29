@@ -25,11 +25,29 @@ import (
 	"time"
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	"github.com/ystia/yorc/v4/log"
+	"regexp"
+	"path/filepath"
+	"fmt"
+	"github.com/elastic/go-elasticsearch/v6/esapi"
+	"strings"
+	"encoding/json"
 )
+
+var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 
 type elasticStore struct {
 	codec encoding.Codec
 	esClient *elasticsearch6.Client
+}
+
+func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
+	var indexName, timestamp string
+	res := re.FindAllStringSubmatch(k, -1)
+	for i := range res {
+		indexName = res[i][1]
+		timestamp = res[i][2]
+	}
+	return "yorc_" + indexName, timestamp
 }
 
 // NewStore returns a new Consul store
@@ -42,6 +60,7 @@ func NewStore() store.Store {
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	log.Printf("About to Set data into ES, k: %s", k)
+
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
@@ -52,7 +71,34 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 	log.Printf("About to Set data into ES, data: %s", data)
 
-	return consulutil.StoreConsulKey(k, data)
+	consulStore.StoreConsulKey(k, data)
+
+	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
+	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
+	req := esapi.IndexRequest{
+		Index:      indexName,
+		Body:       strings.NewReader(data),
+		Refresh:    "true",
+	}
+	res, err := req.Do(context.Background(), c.esClient)
+
+	defer res.Body.Close()
+
+	if err != nil {
+		return err
+	} else if res.IsError() {
+		return errors.New(res.String())
+	} else {
+		// Deserialize the response into a map.
+		var r map[string]interface{}
+		if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+			log.Printf("Error parsing the response body: %s", err)
+		} else {
+			// Print the response status and indexed document version.
+			log.Printf("[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
+		}
+		return nil
+	}
 }
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
