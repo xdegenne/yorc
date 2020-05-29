@@ -29,6 +29,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v6/esapi"
 	"encoding/json"
 	"bytes"
+	"github.com/ystia/yorc/config"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -36,6 +37,7 @@ var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 type elasticStore struct {
 	codec encoding.Codec
 	esClient *elasticsearch6.Client
+	clusterId string
 }
 
 func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
@@ -48,20 +50,26 @@ func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
 	return "yorc_" + indexName, timestamp
 }
 
-// NewStore returns a new Consul store
-func NewStore() store.Store {
+// NewStore returns a new Elastic store
+func NewStore(cfg config.Configuration) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
 	log.Printf("Here are the ES cluster info")
 	log.Println(esClient.Info());
-	return &elasticStore{encoding.JSON, esClient}
+	log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
+	var clusterId string = cfg.ClusterID
+	if len(clusterId) != 0 {
+		clusterId = cfg.ServerID
+	}
+	return &elasticStore{encoding.JSON, esClient, clusterId}
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	log.Printf("About to Set data into ES, k: %s", k)
+	log.Printf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
 
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
+
 
 	data, err := c.codec.Marshal(v)
 	if err != nil {

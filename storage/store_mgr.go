@@ -353,7 +353,7 @@ func createStoreImpl(cfg config.Configuration, configStore config.Store, storeTy
 	case strings.ToLower(consulStoreImpl):
 		stores[storeType] = consul.NewStore()
 	case strings.ToLower(elasticStoreImpl):
-		stores[storeType] = elastic.NewStore()
+		stores[storeType] = elastic.NewStore(cfg)
 	default:
 		log.Printf("[WARNING] unknown store implementation:%q. This will be ignored.", storeType)
 	}
