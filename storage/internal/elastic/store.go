@@ -72,7 +72,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
-	data, err := c.codec.Marshal(enrichedData)
+	data, err := c.codec.Marshal(v)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
