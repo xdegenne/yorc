@@ -29,7 +29,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v6/esapi"
 	"encoding/json"
 	"bytes"
-	"github.com/ystia/yorc/config"
+	"github.com/ystia/yorc/v4/config"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
