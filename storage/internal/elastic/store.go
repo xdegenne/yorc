@@ -72,22 +72,28 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
-	enrichedData := v.(map[string]interface{})
-	enrichedData["clusterId"] = c.clusterId
-
 	data, err := c.codec.Marshal(enrichedData)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
+	consulutil.StoreConsulKey(k, data)
+
 	log.Printf("About to Set data into ES, data (%T): %s", data, data)
 
-	consulutil.StoreConsulKey(k, data)
+
+	var v2 interface{}
+	json.Unmarshal(data, &v2)
+	enrichedData := v2.(map[string]interface{})
+	enrichedData["clusterId"] = c.clusterId
+
+	var jsonData []byte
+	jsonData, err = json.Marshal(enrichedData)
 
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
 	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
 	req := esapi.IndexRequest{
 		Index:      indexName,
-		Body:       bytes.NewReader(data),
+		Body:       bytes.NewReader(jsonData),
 		Refresh:    "true",
 	}
 	res, err := req.Do(context.Background(), c.esClient)
