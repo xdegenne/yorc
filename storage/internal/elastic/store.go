@@ -388,7 +388,13 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 }
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	log.Printf("SetCollection called")
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	if keyValues == nil || len(keyValues) == 0 {
 		return nil
 	}
@@ -411,7 +417,13 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 }
 
 func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	log.Printf("Get called, k: %s, v (%T) : %+v", k, v, v)
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return false, err
 	}
@@ -425,7 +437,13 @@ func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
 }
 
 func (c *elasticStore) Exist(k string) (bool, error) {
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	log.Printf("Exist called k: %s", k)
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	if err := utils.CheckKey(k); err != nil {
 		return false, err
 	}
@@ -438,7 +456,13 @@ func (c *elasticStore) Exist(k string) (bool, error) {
 }
 
 func (c *elasticStore) Keys(k string) ([]string, error) {
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	log.Printf("Keys called k: %s", k)
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	return consulutil.GetKeys(k)
 }
 
@@ -468,7 +492,13 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 }
 
 func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	log.Printf("GetLastModifyIndex called k: %s", k)
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
+	log.Println(strings.Repeat("=", 37))
 	_, qm, err := consulutil.GetKV().Get(k, nil)
 	if err != nil || qm == nil {
 		return 0, errors.Errorf("Failed to retrieve last index for key:%q", k)
