@@ -34,8 +34,9 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var indicePrefix = "mimi"
-var sequenceIndiceName = indicePrefix + "anothersequence"
+var indicePrefix = "momo"
+var indiceSuffixe = "mumu"
+var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
 
 
 type elasticStore struct {
@@ -68,8 +69,8 @@ func NewStore(cfg config.Configuration) store.Store {
 	}
 	InitSequenceIndices(esClient, clusterId, "logs")
 	InitSequenceIndices(esClient, clusterId, "events")
-	InitStorageIndices(esClient, indicePrefix + "logs")
-	InitStorageIndices(esClient, indicePrefix + "events")
+	InitStorageIndices(esClient, indicePrefix + "logs" + indiceSuffixe)
+	InitStorageIndices(esClient, indicePrefix + "events" + indiceSuffixe)
 	return &elasticStore{encoding.JSON, esClient, clusterId}
 }
 
@@ -83,7 +84,6 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 		Index: []string{indiceName},
 		ExpandWildcards: "none",
 		AllowNoIndices: &pfalse,
-
 	}
 	res, err := req.Do(context.Background(), esClient)
 	debugESResponse("IndicesExistsRequest:" + indiceName, res, err)
@@ -152,6 +152,10 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 	debugESResponse("IndicesExistsRequest:" + sequenceIndiceName, res, err)
 	defer res.Body.Close()
 	log.Printf("Status Code for IndicesExistsRequest (%s): %d", sequenceIndiceName, res.StatusCode)
+
+	if res.StatusCode == 200 {
+		log.Printf("Indice %s was found, nothing to do !", sequenceIndiceName)
+	}
 
 	if res.StatusCode == 404 {
 		log.Printf("Indice %s was not found, let's create it !", sequenceIndiceName)
@@ -314,7 +318,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      indicePrefix + indexName,
+		Index:      indicePrefix + indexName + indiceSuffixe,
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(jsonData),
 		Refresh:    "true",
