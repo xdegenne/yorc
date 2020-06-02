@@ -453,7 +453,7 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
 	log.Printf("query is : %s", query)
 
-	var MaxInt = int(math.MaxUint64 >> 1)
+	var MaxInt = 1024000
 	log.Printf("MaxInt is : %d", MaxInt)
 
 	req := esapi.DeleteByQueryRequest{
