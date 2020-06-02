@@ -284,6 +284,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
+		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(jsonData),
 		Refresh:    "true",
 	}
