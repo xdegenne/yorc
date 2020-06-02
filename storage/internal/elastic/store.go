@@ -32,7 +32,6 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
-	"fmt"
 )
 
 //var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -474,6 +473,8 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		log.Printf("Hits is %d and timeout not reached, sleeping ...", hits)
 		time.Sleep(esTimeout)
 	}
+
+	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
 
@@ -541,7 +542,7 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		})
 	}
 
-	log.Printf("List called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
+	log.Printf("ListEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
 }
 
