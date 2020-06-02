@@ -91,7 +91,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
          "number_of_shards": 1
      },
      "mappings": {
-         "_sequence": {
+         "sequence": {
              "_all": {"enabled": 0},
              "dynamic": "strict",
              "properties": {
@@ -135,7 +135,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		req_index := esapi.IndexRequest{
 			Index:      sequenceIndiceName,
 			DocumentID: sequence_id,
-			DocumentType: "_sequence",
+			DocumentType: "sequence",
 			Body:       strings.NewReader(`{"iid" : 0}`),
 			Refresh:    "true",
 		}
@@ -157,7 +157,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 	req_update := esapi.UpdateRequest{
 		Index: sequenceIndiceName,
 		DocumentID: sequence_id,
-		DocumentType: "_sequence",
+		DocumentType: "sequence",
 		Body: strings.NewReader(`{"script": "ctx._source.iid += 1", "lang": "groovy"}`),
 		Fields: []string{"iid"},
 	}
