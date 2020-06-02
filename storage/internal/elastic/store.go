@@ -31,9 +31,11 @@ import (
 	"bytes"
 	"github.com/ystia/yorc/v4/config"
 	"strings"
+	"strconv"
 )
 
-var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
+//var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
+var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
 var indicePrefix = "nyc_"
 var indiceSuffixe = ""
 var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
@@ -45,7 +47,16 @@ type elasticStore struct {
 	clusterId string
 }
 
-func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
+func (c *elasticStore) extractIndexName(k string) string {
+	var indexName string
+	res := re.FindAllStringSubmatch(k, -1)
+	for i := range res {
+		indexName = res[i][1]
+	}
+	return indexName
+}
+
+func (c *elasticStore) _extractIndexNameAndTimestamp(k string) (string, string) {
 	var indexName, timestamp string
 	res := re.FindAllStringSubmatch(k, -1)
 	for i := range res {
@@ -325,8 +336,8 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	enrichedData["clusterId"] = c.clusterId
 
 	// Extract indice name by parsing the key
-	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
-	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
+	indexName := c.extractIndexName(k)
+	log.Printf("indexName is: %s", indexName)
 
 	iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
 	enrichedData["iid"] = iid
@@ -434,6 +445,85 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 }
 
 func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
+	log.Printf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
+	if err := utils.CheckKey(k); err != nil {
+		return nil, 0, err
+	}
+
+	// Extract indice name by parsing the key
+	indexName := c.extractIndexName(k)
+	log.Printf("indexName is: %s", indexName)
+
+	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, {"range": { "iid" : {"gt": ` + strconv.FormatUint(waitIndex, 10) + `}}}]}}}`
+	log.Printf("query is : %s", query)
+
+	res, err := esClient.Search(
+		esClient.Search.WithContext(context.Background()),
+		esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
+		esClient.Search.WithSize(1000),
+		esClient.Search.WithBody(strings.NewReader(query)),
+		esClient.Search.WithSort("iid:asc"),
+		esClient.Search.WithTrackTotalHits(true),
+		esClient.Search.WithPretty(),
+	)
+	if err != nil {
+		log.Printf("ERROR: %s", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		var e map[string]interface{}
+		if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+			log.Printf("error parsing the response body: %s", err)
+		} else {
+			// Print the response status and error information.
+			log.Printf("[%s] %s: %s",
+				res.Status(),
+				e["error"].(map[string]interface{})["type"],
+				e["error"].(map[string]interface{})["reason"],
+			)
+		}
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		log.Printf("Error parsing the response body: %s", err)
+	}
+	// Print the response status, number of results, and request duration.
+	log.Printf(
+		"[%s] %d hits; took: %dms",
+		res.Status(),
+		int(r["hits"].(map[string]interface{})["total"].(float64)),
+		int(r["took"].(float64)),
+	)
+
+	values := make([]store.KeyValueOut, 0)
+	var lastIndex = waitIndex
+
+	// Print the ID and document source for each hit.
+	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
+		id := hit.(map[string]interface{})["_id"]
+		source := hit.(map[string]interface{})["_source"]
+		iid := source.(map[string]interface{})["iid"]
+		iid_uint64 := uint64(iid.(float64))
+		lastIndex = iid_uint64
+		//fmt.Printf("\n * ID=%s, %s", id, source)
+		jsonString, _ := json.Marshal(source)
+		log.Printf("\n * ID=%s, %s, %T", id, jsonString, jsonString)
+		values = append(values, store.KeyValueOut{
+			Key:             id,
+			LastModifyIndex: iid_uint64,
+			Value:           source,
+			RawValue:        jsonString,
+		})
+	}
+
+	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
+	return values, lastIndex, nil
+}
+
+
+func (c *elasticStore) _List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
 	log.Printf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
 	if err := utils.CheckKey(k); err != nil {
 		return nil, 0, err
