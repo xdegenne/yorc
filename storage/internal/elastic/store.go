@@ -32,6 +32,7 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
+	"fmt"
 )
 
 //var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -39,6 +40,7 @@ var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
 var indicePrefix = "nyc_"
 var indiceSuffixe = ""
 var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
+var esTimeout = (10 * time.Second)
 
 
 type elasticStore struct {
@@ -457,9 +459,28 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, {"range": { "iid" : {"gt": ` + strconv.FormatUint(waitIndex, 10) + `}}}]}}}`
 	log.Printf("query is : %s", query)
 
+	now := time.Now()
+	end := now.Add(timeout)
+	var values = make([]store.KeyValueOut, 0)
+	var lastIndex = waitIndex
+	var hits = 0
+	var err error
+	for {
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName + indiceSuffixe, query, waitIndex);
+		now := time.Now()
+		if hits > 0 || now.After(end) {
+			break
+		}
+		log.Printf("Hits is %d and timeout not reached, sleeping ...", hits)
+		time.Sleep(esTimeout)
+	}
+	return values, lastIndex, err
+}
+
+func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int, []store.KeyValueOut, uint64, error) {
 	res, err := c.esClient.Search(
 		c.esClient.Search.WithContext(context.Background()),
-		c.esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
+		c.esClient.Search.WithIndex(index),
 		c.esClient.Search.WithSize(1000),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
 		c.esClient.Search.WithSort("iid:asc"),
@@ -489,11 +510,13 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		log.Printf("Error parsing the response body: %s", err)
 	}
+
+	hits := int(r["hits"].(map[string]interface{})["total"].(float64))
 	// Print the response status, number of results, and request duration.
 	log.Printf(
 		"[%s] %d hits; took: %dms",
 		res.Status(),
-		int(r["hits"].(map[string]interface{})["total"].(float64)),
+		hits,
 		int(r["took"].(float64)),
 	)
 
@@ -518,10 +541,9 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		})
 	}
 
-	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
-	return values, lastIndex, nil
+	log.Printf("List called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
+	return hits, values, lastIndex, nil
 }
-
 
 func (c *elasticStore) _List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
 	log.Printf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
