@@ -34,7 +34,7 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var indicePrefix = "yo"
+var indicePrefix = "mimi"
 var sequenceIndiceName = indicePrefix + "anothersequence"
 
 
@@ -76,10 +76,14 @@ func NewStore(cfg config.Configuration) store.Store {
 func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 	log.Printf("Checking if index <%s> already exists", indiceName)
+	pfalse := false
 
 	// check if the sequences index exists
 	req := esapi.IndicesExistsRequest{
 		Index: []string{indiceName},
+		ExpandWildcards: "none",
+		AllowNoIndices: &pfalse,
+
 	}
 	res, err := req.Do(context.Background(), esClient)
 	debugESResponse("IndicesExistsRequest:" + indiceName, res, err)
@@ -136,10 +140,13 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 
 	sequence_id := sequenceName + "_" + clusterId;
 	log.Printf("Initializing index <%s> with document <%s> for for sequence management.", sequenceIndiceName, sequence_id)
+	pfalse := false
 
 	// check if the sequences index exists
 	req := esapi.IndicesExistsRequest{
 		Index: []string{sequenceIndiceName},
+		ExpandWildcards: "none",
+		AllowNoIndices: &pfalse,
 	}
 	res, err := req.Do(context.Background(), esClient)
 	debugESResponse("IndicesExistsRequest:" + sequenceIndiceName, res, err)
