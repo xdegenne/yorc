@@ -453,6 +453,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		if err := c.codec.Unmarshal(kvp.Value, &value); err != nil {
 			return nil, 0, errors.Wrapf(err, "failed to unmarshal stored value: %q", string(kvp.Value))
 		}
+		log.Printf("Appending result with Key: %s, ModifyIndex: %d", kvp.Key, kvp.ModifyIndex)
 
 		values = append(values, store.KeyValueOut{
 			Key:             kvp.Key,
