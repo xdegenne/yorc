@@ -34,7 +34,7 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var indicePrefix = "yorcinus_"
+var indicePrefix = "yo"
 var sequenceIndiceName = indicePrefix + "anothersequence"
 
 
