@@ -457,14 +457,14 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, {"range": { "iid" : {"gt": ` + strconv.FormatUint(waitIndex, 10) + `}}}]}}}`
 	log.Printf("query is : %s", query)
 
-	res, err := esClient.Search(
-		esClient.Search.WithContext(context.Background()),
-		esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
-		esClient.Search.WithSize(1000),
-		esClient.Search.WithBody(strings.NewReader(query)),
-		esClient.Search.WithSort("iid:asc"),
-		esClient.Search.WithTrackTotalHits(true),
-		esClient.Search.WithPretty(),
+	res, err := c.esClient.Search(
+		c.esClient.Search.WithContext(context.Background()),
+		c.esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
+		c.esClient.Search.WithSize(1000),
+		c.esClient.Search.WithBody(strings.NewReader(query)),
+		c.esClient.Search.WithSort("iid:asc"),
+		c.esClient.Search.WithTrackTotalHits(true),
+		c.esClient.Search.WithPretty(),
 	)
 	if err != nil {
 		log.Printf("ERROR: %s", err)
@@ -502,7 +502,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 
 	// Print the ID and document source for each hit.
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
-		id := hit.(map[string]interface{})["_id"]
+		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"]
 		iid := source.(map[string]interface{})["iid"]
 		iid_uint64 := uint64(iid.(float64))
