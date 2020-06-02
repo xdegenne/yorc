@@ -503,8 +503,8 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	// Print the ID and document source for each hit.
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
-		source := hit.(map[string]interface{})["_source"]
-		iid := source.(map[string]interface{})["iid"]
+		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		iid := source["iid"]
 		iid_uint64 := uint64(iid.(float64))
 		lastIndex = iid_uint64
 		//fmt.Printf("\n * ID=%s, %s", id, source)
