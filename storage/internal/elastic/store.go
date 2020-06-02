@@ -71,6 +71,9 @@ func NewStore(cfg config.Configuration) store.Store {
 	InitSequenceIndices(esClient, clusterId, "events")
 	InitStorageIndices(esClient, indicePrefix + "logs" + indiceSuffixe)
 	InitStorageIndices(esClient, indicePrefix + "events" + indiceSuffixe)
+	debugIndexSetting(esClient, sequenceIndiceName)
+	debugIndexSetting(esClient, indicePrefix + "logs" + indiceSuffixe)
+	debugIndexSetting(esClient, indicePrefix + "events" + indiceSuffixe)
 	return &elasticStore{encoding.JSON, esClient, clusterId}
 }
 
@@ -84,6 +87,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 		Index: []string{indiceName},
 		ExpandWildcards: "none",
 		AllowNoIndices: &pfalse,
+
 	}
 	res, err := req.Do(context.Background(), esClient)
 	debugESResponse("IndicesExistsRequest:" + indiceName, res, err)
@@ -111,7 +115,11 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                  "clusterId": {
                      "type": "keyword",
                      "index": true
-                 }
+                 },
+                 "deploymentId": {
+                     "type": "keyword",
+                     "index": true
+                 },
              }
          }
      }
@@ -228,6 +236,17 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		}
 	}
 
+}
+
+func debugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
+	log.Printf("Get settings for index <%s>", indiceName)
+	req_settings := esapi.IndicesGetSettingsRequest{
+		Index: []string{indiceName},
+		Pretty: true,
+	}
+	res, err := req_settings.Do(context.Background(), esClient)
+	debugESResponse("IndicesGetSettingsRequest:" + indiceName, res, err)
+	defer res.Body.Close()
 }
 
 func debugESResponse(msg string, res *esapi.Response, err error) {
