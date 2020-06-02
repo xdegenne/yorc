@@ -61,7 +61,7 @@ func (c *elasticStore) extractIndexName(k string) string {
 
 func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string) {
 	var indexName, deploymentId string
-	res := indexNameRegex.FindAllStringSubmatch(k, -1)
+	res := indexNameAndDeploymentIdRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
 		deploymentId = res[i][2]
