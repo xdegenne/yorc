@@ -196,7 +196,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 	// check if the document concerning this sequence is present
 	req_get := esapi.GetRequest{
 		Index: sequenceIndiceName,
-		DocumentType: "_sequence",
+		DocumentType: "sequence",
 		DocumentID: sequence_id,
 	}
 	res, err = req_get.Do(context.Background(), esClient)
