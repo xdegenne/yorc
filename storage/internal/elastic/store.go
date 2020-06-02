@@ -75,11 +75,14 @@ func NewStore(cfg config.Configuration) store.Store {
 
 func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
+	log.Printf("Checking if index <%s> already exists", indiceName)
+
 	// check if the sequences index exists
 	req := esapi.IndicesExistsRequest{
 		Index: []string{indiceName},
 	}
-	res, _ := req.Do(context.Background(), esClient)
+	res, err := req.Do(context.Background(), esClient)
+	debugESResponse("IndicesExistsRequest:" + indiceName, res, err)
 	defer res.Body.Close()
 	log.Printf("Status Code for IndicesExistsRequest (%s): %d", indiceName, res.StatusCode)
 
@@ -115,7 +118,8 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 			Index: indiceName,
 			Body: strings.NewReader(requestBodyData),
 		}
-		res, _ := req.Do(context.Background(), esClient)
+		res, err := req.Do(context.Background(), esClient)
+		debugESResponse("IndicesCreateRequest:" + indiceName, res, err)
 		defer res.Body.Close()
 		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", indiceName, res.StatusCode)
 		if res.IsError() {
@@ -137,7 +141,8 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 	req := esapi.IndicesExistsRequest{
 		Index: []string{sequenceIndiceName},
 	}
-	res, _ := req.Do(context.Background(), esClient)
+	res, err := req.Do(context.Background(), esClient)
+	debugESResponse("IndicesExistsRequest:" + sequenceIndiceName, res, err)
 	defer res.Body.Close()
 	log.Printf("Status Code for IndicesExistsRequest (%s): %d", sequenceIndiceName, res.StatusCode)
 
@@ -168,7 +173,8 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 			Index: sequenceIndiceName,
 			Body: strings.NewReader(requestBodyData),
 		}
-		res, _ := req.Do(context.Background(), esClient)
+		res, err := req.Do(context.Background(), esClient)
+		debugESResponse("IndicesCreateRequest:" + sequenceIndiceName, res, err)
 		defer res.Body.Close()
 		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", sequenceIndiceName, res.StatusCode)
 		if res.IsError() {
@@ -179,13 +185,16 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 
 	}
 
+	log.Printf("Searching for document in sequence index <%s> with ID <%s>", sequenceIndiceName, sequence_id)
 	// check if the document concerning this sequence is present
 	req_get := esapi.GetRequest{
 		Index: sequenceIndiceName,
 		DocumentType: "_sequence",
 		DocumentID: sequence_id,
 	}
-	res, _ = req_get.Do(context.Background(), esClient)
+	res, err = req_get.Do(context.Background(), esClient)
+	debugESResponse("GetRequest:"  + sequenceIndiceName + "/" + sequence_id, res, err)
+	log.Printf("\nStatus Code for GetRequest (%s, %s) : %d", sequenceIndiceName, sequence_id, res.StatusCode)
 	defer res.Body.Close()
 
 	if res.StatusCode == 404 {
@@ -198,7 +207,8 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 			Body:       strings.NewReader(`{"iid" : 0}`),
 			Refresh:    "true",
 		}
-		res, _ = req_index.Do(context.Background(), esClient)
+		res, err = req_index.Do(context.Background(), esClient)
+		debugESResponse("IndexRequest:" + sequenceIndiceName + "/" + sequence_id, res, err)
 		log.Printf("\nStatus Code for IndexRequest (%s, %s) : %d", sequenceIndiceName, sequence_id, res.StatusCode)
 		if res.IsError() {
 			var rsp_IndexRequest map[string]interface{}
@@ -207,6 +217,20 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		}
 	}
 
+}
+
+func debugESResponse(msg string, res *esapi.Response, err error) {
+	if err != nil {
+		log.Printf("[%s] Error while requesting ES : %+v", msg, err)
+	} else if res.IsError() {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Printf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
+	} else {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Printf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
+	}
 }
 
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (float64, error) {
@@ -289,6 +313,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		Refresh:    "true",
 	}
 	res, err := req.Do(context.Background(), c.esClient)
+	debugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
 
 	defer res.Body.Close()
 
