@@ -32,6 +32,7 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
+	"math"
 )
 
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -452,9 +453,12 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
 	log.Printf("query is : %s", query)
 
+	var MaxInt = int(math.MaxUint64 >> 1)
+	log.Printf("MaxInt is : %d", MaxInt)
+
 	req := esapi.DeleteByQueryRequest{
 		Index: []string{indicePrefix + indexName + indiceSuffixe},
-		Size: MaxUint,
+		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
 	res, err := req.Do(context.Background(), c.esClient)
