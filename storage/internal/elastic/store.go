@@ -30,7 +30,6 @@ import (
 	"encoding/json"
 	"bytes"
 	"github.com/ystia/yorc/v4/config"
-	"fmt"
 	"strings"
 )
 
