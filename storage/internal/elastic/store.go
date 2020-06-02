@@ -34,7 +34,9 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var sequenceIndiceName = "yorc_myyysequencesssss"
+var indicePrefix = "yorc2_"
+var sequenceIndiceName = indicePrefix + "anotherSequence"
+
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -66,7 +68,64 @@ func NewStore(cfg config.Configuration) store.Store {
 	}
 	InitSequenceIndices(esClient, clusterId, "logs")
 	InitSequenceIndices(esClient, clusterId, "events")
+	InitStorageIndices(esClient, indicePrefix + "logs")
+	InitStorageIndices(esClient, indicePrefix + "events")
 	return &elasticStore{encoding.JSON, esClient, clusterId}
+}
+
+func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
+
+	// check if the sequences index exists
+	req := esapi.IndicesExistsRequest{
+		Index: []string{indiceName},
+	}
+	res, _ := req.Do(context.Background(), esClient)
+	defer res.Body.Close()
+	log.Printf("Status Code for IndicesExistsRequest (%s): %d", indiceName, res.StatusCode)
+
+	if res.StatusCode == 200 {
+		log.Printf("Indice %s was found, nothing to do !", indiceName)
+	}
+
+	if res.StatusCode == 404 {
+		log.Printf("Indice %s was not found, let's create it !", indiceName)
+
+		requestBodyData := `
+{
+     "mappings": {
+         "logs_or_event": {
+             "_all": {"enabled": 0},
+             "dynamic": "false",
+             "properties": {
+                 "iid": {
+                     "type": "long",
+                     "index": true
+                 },
+                 "clusterId": {
+                     "type": "keyword",
+                     "index": true
+                 }
+             }
+         }
+     }
+}`
+
+		// indice doest not exist, let's create it
+		req := esapi.IndicesCreateRequest{
+			Index: indiceName,
+			Body: strings.NewReader(requestBodyData),
+		}
+		res, _ := req.Do(context.Background(), esClient)
+		defer res.Body.Close()
+		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", indiceName, res.StatusCode)
+		if res.IsError() {
+			var rsp_IndicesCreateRequest map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp_IndicesCreateRequest)
+			log.Printf("Response for IndicesCreateRequest: %+v", rsp_IndicesCreateRequest)
+		}
+
+	}
+
 }
 
 func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequenceName string) {
@@ -92,7 +151,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
      },
      "mappings": {
          "sequence": {
-             "_all": {"enabled": 0},
+             "_all": {"enabled": false},
              "dynamic": "strict",
              "properties": {
                  "iid": {
@@ -224,7 +283,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      "yorc_" + indexName,
+		Index:      indicePrefix + indexName,
 		Body:       bytes.NewReader(jsonData),
 		Refresh:    "true",
 	}
