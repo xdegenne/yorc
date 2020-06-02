@@ -34,8 +34,8 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var indicePrefix = "yorc2_"
-var sequenceIndiceName = indicePrefix + "anotherSequence"
+var indicePrefix = "yorcinus_"
+var sequenceIndiceName = indicePrefix + "anothersequence"
 
 
 type elasticStore struct {
@@ -121,7 +121,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 		if res.IsError() {
 			var rsp_IndicesCreateRequest map[string]interface{}
 			json.NewDecoder(res.Body).Decode(&rsp_IndicesCreateRequest)
-			log.Printf("Response for IndicesCreateRequest: %+v", rsp_IndicesCreateRequest)
+			log.Printf("Response for IndicesCreateRequest (%s) : %+v", indiceName, rsp_IndicesCreateRequest)
 		}
 
 	}
