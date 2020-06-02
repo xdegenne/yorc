@@ -34,8 +34,8 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var indicePrefix = "momo"
-var indiceSuffixe = "mumu"
+var indicePrefix = "nyc_"
+var indiceSuffixe = ""
 var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
 
 
