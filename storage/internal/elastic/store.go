@@ -287,7 +287,7 @@ func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
 		return found, err
 	}
 
-	return true,  .Wrapf(c.codec.Unmarshal(value, v), "failed to unmarshal data:%q", string(value))
+	return true, errors.Wrapf(c.codec.Unmarshal(value, v), "failed to unmarshal data:%q", string(value))
 }
 
 func (c *elasticStore) Exist(k string) (bool, error) {
