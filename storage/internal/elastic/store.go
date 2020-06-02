@@ -34,8 +34,9 @@ import (
 	"strconv"
 )
 
-//var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
+//var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
+var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
+var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)\/`)
 var indicePrefix = "nyc_"
 var indiceSuffixe = ""
 var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
@@ -50,16 +51,26 @@ type elasticStore struct {
 
 func (c *elasticStore) extractIndexName(k string) string {
 	var indexName string
-	res := re.FindAllStringSubmatch(k, -1)
+	res := indexNameRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
 	}
 	return indexName
 }
 
+func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string) {
+	var indexName, deploymentId string
+	res := indexNameRegex.FindAllStringSubmatch(k, -1)
+	for i := range res {
+		indexName = res[i][1]
+		deploymentId = res[i][2]
+	}
+	return indexName, deploymentId
+}
+
 func (c *elasticStore) _extractIndexNameAndTimestamp(k string) (string, string) {
 	var indexName, timestamp string
-	res := re.FindAllStringSubmatch(k, -1)
+	res := indexNameRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
 		timestamp = res[i][2]
@@ -433,7 +444,24 @@ func (c *elasticStore) Keys(k string) ([]string, error) {
 
 func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) error {
 	log.Printf("Delete called k: %s, recursive: %t", k, recursive)
-	return consulutil.Delete(k, recursive)
+
+	// Extract indice name and deploymentId by parsing the key
+	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
+
+	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
+	log.Printf("query is : %s", query)
+
+	req := esapi.DeleteByQueryRequest{
+		Index: []string{indicePrefix + indexName + indiceSuffixe},
+		Size: MaxUint,
+		Body: strings.NewReader(query),
+	}
+	res, err := req.Do(context.Background(), c.esClient)
+	debugESResponse("DeleteByQueryRequest:" + indicePrefix + indexName, res, err)
+
+	defer res.Body.Close()
+	return err
 }
 
 func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
