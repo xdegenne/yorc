@@ -31,7 +31,6 @@ import (
 	"bytes"
 	"github.com/ystia/yorc/v4/config"
 	"strings"
-	"fmt"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -113,6 +112,11 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		res, _ := req.Do(context.Background(), esClient)
 		defer res.Body.Close()
 		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", sequenceIndiceName, res.StatusCode)
+		if res.IsError() {
+			var rsp_IndicesCreateRequest map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp_IndicesCreateRequest)
+			log.Printf("Response for IndicesCreateRequest: %+v", rsp_IndicesCreateRequest)
+		}
 
 	}
 
@@ -140,7 +144,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		if res.IsError() {
 			var rsp_IndexRequest map[string]interface{}
 			json.NewDecoder(res.Body).Decode(&rsp_IndexRequest)
-			fmt.Printf("\nResponse for IndexRequest: %+v", rsp_IndexRequest)
+			log.Printf("\nResponse for IndexRequest: %+v", rsp_IndexRequest)
 		}
 	}
 
