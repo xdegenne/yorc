@@ -461,5 +461,6 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 			RawValue:        kvp.Value,
 		})
 	}
+	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, qm.LastIndex, len(values))
 	return values, qm.LastIndex, nil
 }
