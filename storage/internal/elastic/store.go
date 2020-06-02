@@ -30,9 +30,12 @@ import (
 	"encoding/json"
 	"bytes"
 	"github.com/ystia/yorc/v4/config"
+	"fmt"
+	"strings"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
+var sequenceIndiceName = "yorc_sequencesssss"
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -47,7 +50,7 @@ func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
 		indexName = res[i][1]
 		timestamp = res[i][2]
 	}
-	return "yorc_" + indexName, timestamp
+	return indexName, timestamp
 }
 
 // NewStore returns a new Elastic store
@@ -59,10 +62,134 @@ func NewStore(cfg config.Configuration) store.Store {
 	//var clusterId string = cfg.ServerID
 	log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
 	var clusterId string = cfg.ClusterID
-	if len(clusterId) != 0 {
+	if len(clusterId) == 0 {
 		clusterId = cfg.ServerID
 	}
+	InitSequenceIndices(esClient, clusterId, "logs")
+	InitSequenceIndices(esClient, clusterId, "events")
 	return &elasticStore{encoding.JSON, esClient, clusterId}
+}
+
+func InitIndices(esClient *elasticsearch6.Client, clusterId string) {
+
+	indices := []string{"yorc_logs", "yorc_events", "yorc_sequences"}
+	//indices[0] = "yorc_logs"
+	//indices[1] = "yorc_events"
+	//indices[2] = "yorc_sequences"
+
+	req := esapi.IndicesExistsRequest{
+		Index: indices,
+	}
+	res, err := req.Do(context.Background(), esClient)
+
+}
+
+func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequenceName string) {
+
+	sequence_id := sequenceName + "_" + clusterId;
+	log.Printf("Initializing index <%s> with document <%s> for for sequence management.", sequenceIndiceName, sequence_id)
+
+	// check if the sequences index exists
+	req := esapi.IndicesExistsRequest{
+		Index: []string{sequenceIndiceName},
+	}
+	res, _ := req.Do(context.Background(), esClient)
+	defer res.Body.Close()
+	log.Printf("Status Code for IndicesExistsRequest (%s): %d", sequenceIndiceName, res.StatusCode)
+
+	if res.StatusCode == 404 {
+		log.Printf("Indice %s was not found, let's create it !", sequenceIndiceName)
+
+		requestBodyData := `
+{
+     "settings": {
+         "number_of_shards": 1
+     },
+     "mappings": {
+         "_sequence": {
+             "_all": {"enabled": 0},
+             "dynamic": "strict",
+             "properties": {
+                 "iid": {
+                     "type": "long",
+                     "index": false
+                 }
+             }
+         }
+     }
+}`
+
+		// indice doest not exist, let's create it
+		req := esapi.IndicesCreateRequest{
+			Index: sequenceIndiceName,
+			Body: strings.NewReader(requestBodyData),
+		}
+		res, _ := req.Do(context.Background(), esClient)
+		defer res.Body.Close()
+		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", sequenceIndiceName, res.StatusCode)
+
+	}
+
+	// check if the document concerning this sequence is present
+	req_get := esapi.GetRequest{
+		Index: sequenceIndiceName,
+		DocumentID: sequence_id,
+	}
+	res, _ = req_get.Do(context.Background(), esClient)
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		log.Printf("Document with ID <%s> was not found in indice <%s>, let's create it !", sequence_id, sequenceIndiceName)
+		// init log sequence
+		req_index := esapi.IndexRequest{
+			Index:      sequenceIndiceName,
+			DocumentID: sequence_id,
+			DocumentType: "_sequence",
+			Body:       strings.NewReader(`{"iid" : 0}`),
+			Refresh:    "true",
+		}
+		res, _ = req_index.Do(context.Background(), esClient)
+		log.Printf("\nStatus Code for IndexRequest (%s, %s) : %d", sequenceIndiceName, sequence_id, res.StatusCode)
+	}
+
+}
+
+func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (float64, error) {
+	sequence_id := sequenceName + "_" + clusterId;
+
+	log.Printf("Updating log sequence for indice <%s> document <%s>", sequenceIndiceName, sequence_id)
+	req_update := esapi.UpdateRequest{
+		Index: sequenceIndiceName,
+		DocumentID: sequence_id,
+		DocumentType: "_sequence",
+		Body: strings.NewReader(`{"script": "ctx._source.iid += 1", "lang": "groovy"}`),
+		Fields: []string{"iid"},
+	}
+	res, err := req_update.Do(context.Background(), esClient)
+	log.Printf("Status Code for UpdateRequest: %d", res.StatusCode)
+	defer res.Body.Close()
+
+	if err != nil {
+		return -1, err
+	}
+
+	if res.IsError() {
+		return -1, errors.Wrap(err, "Error while upgrading sequence iid")
+	} else {
+		// Deserialize the response into a map.
+		var r map[string]interface{}
+		if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+			return -1, errors.Wrap(err, "Error parsing the response body")
+		} else {
+			// Print the response status and indexed document version.
+			//fmt.Printf("\n update response: %+v", r)
+			//fmt.Printf("\n next id is : %s", r["fields"])
+			var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
+			log.Printf("Next iid for %s is : %v (%T)", sequence_id, s, s)
+			return s.(float64), nil
+			//fmt.Printf("\n[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
+		}
+	}
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
@@ -76,24 +203,32 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
+	// TODO: remove
+	// We still continue to store data into consul
 	consulutil.StoreConsulKey(k, data)
 
 	log.Printf("About to Set data into ES, data (%T): %s", data, data)
 
-
+	// enrich the data by adding the clusterId
 	var v2 interface{}
 	json.Unmarshal(data, &v2)
 	enrichedData := v2.(map[string]interface{})
 	enrichedData["clusterId"] = c.clusterId
 
+	// Extract indice name by parsing the key
+	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
+	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
+
+	iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
+	enrichedData["iid"] = iid
+
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
 	log.Printf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
 
-	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
-	log.Printf("indexName is: %s, timestamp is: %s", indexName, timestamp)
+	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      indexName,
+		Index:      "yorc_" + indexName,
 		Body:       bytes.NewReader(jsonData),
 		Refresh:    "true",
 	}
@@ -104,7 +239,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return err
 	} else if res.IsError() {
-		return errors.New(res.String())
+		return errors.Errorf("Error while indexing document, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
 	} else {
 		// Deserialize the response into a map.
 		var r map[string]interface{}
@@ -152,7 +287,7 @@ func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
 		return found, err
 	}
 
-	return true, errors.Wrapf(c.codec.Unmarshal(value, v), "failed to unmarshal data:%q", string(value))
+	return true,  .Wrapf(c.codec.Unmarshal(value, v), "failed to unmarshal data:%q", string(value))
 }
 
 func (c *elasticStore) Exist(k string) (bool, error) {
