@@ -31,10 +31,11 @@ import (
 	"bytes"
 	"github.com/ystia/yorc/v4/config"
 	"strings"
+	"fmt"
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var sequenceIndiceName = "yorc_mysequencesssss"
+var sequenceIndiceName = "yorc_myyysequencesssss"
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -118,6 +119,7 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 	// check if the document concerning this sequence is present
 	req_get := esapi.GetRequest{
 		Index: sequenceIndiceName,
+		DocumentType: "_sequence",
 		DocumentID: sequence_id,
 	}
 	res, _ = req_get.Do(context.Background(), esClient)
@@ -135,6 +137,11 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 		}
 		res, _ = req_index.Do(context.Background(), esClient)
 		log.Printf("\nStatus Code for IndexRequest (%s, %s) : %d", sequenceIndiceName, sequence_id, res.StatusCode)
+		if res.IsError() {
+			var rsp_IndexRequest map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp_IndexRequest)
+			fmt.Printf("\nResponse for IndexRequest: %+v", rsp_IndexRequest)
+		}
 	}
 
 }
