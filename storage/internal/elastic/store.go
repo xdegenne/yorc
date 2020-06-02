@@ -32,7 +32,6 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
-	"math"
 )
 
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
