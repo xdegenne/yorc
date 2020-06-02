@@ -34,7 +34,7 @@ import (
 )
 
 var re = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-var sequenceIndiceName = "yorc_sequencesssss"
+var sequenceIndiceName = "yorc_mysequencesssss"
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -67,20 +67,6 @@ func NewStore(cfg config.Configuration) store.Store {
 	InitSequenceIndices(esClient, clusterId, "logs")
 	InitSequenceIndices(esClient, clusterId, "events")
 	return &elasticStore{encoding.JSON, esClient, clusterId}
-}
-
-func InitIndices(esClient *elasticsearch6.Client, clusterId string) {
-
-	indices := []string{"yorc_logs", "yorc_events", "yorc_sequences"}
-	//indices[0] = "yorc_logs"
-	//indices[1] = "yorc_events"
-	//indices[2] = "yorc_sequences"
-
-	req := esapi.IndicesExistsRequest{
-		Index: indices,
-	}
-	res, err := req.Do(context.Background(), esClient)
-
 }
 
 func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequenceName string) {
