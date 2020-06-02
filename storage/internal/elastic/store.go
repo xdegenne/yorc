@@ -105,7 +105,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 {
      "mappings": {
          "logs_or_event": {
-             "_all": {"enabled": 0},
+             "_all": {"enabled": false},
              "dynamic": "false",
              "properties": {
                  "iid": {
@@ -119,7 +119,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                  "deploymentId": {
                      "type": "keyword",
                      "index": true
-                 },
+                 }
              }
          }
      }
