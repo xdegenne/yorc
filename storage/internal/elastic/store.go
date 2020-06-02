@@ -294,7 +294,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 			//fmt.Printf("\n update response: %+v", r)
 			//fmt.Printf("\n next id is : %s", r["fields"])
 			var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
-			log.Printf("Next iid for %s is : %v (%T)", sequence_id, s, s)
+			log.Printf("Next iid for %s is : %v (%T), float representation: %f, uint64 conversion: %d", sequence_id, s, s, s.(float64), uint64(s.(float64)))
 			return s.(float64), nil
 			//fmt.Printf("\n[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
 		}
