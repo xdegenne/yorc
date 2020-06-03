@@ -374,6 +374,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		Fields: []string{"iid_str"},
 	}
 	res, err := req_update.Do(context.Background(), esClient)
+	debugESResponse("UpdateRequest:" + sequenceIndiceName + "/" + sequence_id, res, err)
 	log.Printf("Status Code for UpdateRequest: %d", res.StatusCode)
 	defer res.Body.Close()
 
@@ -392,7 +393,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
-		log.Panicf("Error while requesting sequence update : %v", err)
+		log.Panicf("Error while requesting sequence update : %d", res.StatusCode)
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
