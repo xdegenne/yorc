@@ -567,7 +567,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
 	log.Printf("indexName is: %s, deploymentId", indexName, deploymentId)
 
-	query := getListQuery(c.clusterId, deploymentId, waitIndex, -1)
+	query := getListQuery(c.clusterId, deploymentId, waitIndex, 0)
 	log.Printf("query is : %s", query)
 
 	now := time.Now()
@@ -640,7 +640,7 @@ func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
 func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIndex uint64) string {
 
 	var rangeQuery, query string
-	if maxIndex > -1 {
+	if maxIndex > 0 {
 		rangeQuery = `
             {
                "range":{
