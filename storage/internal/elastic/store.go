@@ -367,7 +367,6 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		Index:      indicePrefix + indexName + indiceSuffixe,
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(jsonData),
-		Refresh:    "true",
 	}
 	res, err := req.Do(context.Background(), c.esClient)
 	debugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
@@ -496,18 +495,13 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 }
 
 func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
 	log.Printf("GetLastModifyIndex called k: %s", k)
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
 
 	// Extract indice name and deploymentId by parsing the key
 	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
 	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
+	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
 	query := `
 {
     "aggs" : {
@@ -593,13 +587,13 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var hits = 0
 	var err error
 	for {
+		time.Sleep(esTimeout)
 		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName + indiceSuffixe, query, waitIndex);
 		now := time.Now()
 		if hits > 0 || now.After(end) {
 			break
 		}
 		log.Printf("Hits is %d and timeout not reached, sleeping ...", hits)
-		time.Sleep(esTimeout)
 	}
 
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
