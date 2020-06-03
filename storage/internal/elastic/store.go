@@ -53,20 +53,20 @@ type elasticStore struct {
 }
 
 type LastIndexResponse struct {
-	hits Hits
-	aggregations LogOrEventAggregation
+	hits Hits `json:"hits"`
+	aggregations LogOrEventAggregation `json:"aggregations"`
 }
 
 type Hits struct {
-	total int
+	total int `json:"total"`
 }
 
 type LogOrEventAggregation struct {
-	logs_or_events LastIndexAggregation
+	logs_or_events LastIndexAggregation `json:"logs_or_events"`
 }
 
 type LastIndexAggregation struct {
-	last_index Int64Value
+	last_index Int64Value `json:"last_index"`
 }
 // last_index_raw := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 type Int64Value struct {
