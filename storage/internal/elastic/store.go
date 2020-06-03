@@ -712,7 +712,7 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		lastIndex = iid_uint64
 		//fmt.Printf("\n * ID=%s, %s", id, source)
 		jsonString, _ := json.Marshal(source)
-		log.Printf("\n * ID=%s, %s, %T", id, jsonString, jsonString)
+		log.Debugf("\n * ID=%s, %s, %T", id, jsonString, jsonString)
 		values = append(values, store.KeyValueOut{
 			Key:             id,
 			LastModifyIndex: iid_uint64,
