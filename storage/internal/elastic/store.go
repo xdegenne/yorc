@@ -36,9 +36,8 @@ import (
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
 var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
-const indicePrefix = "nyc_"
-const indiceSuffixe = ""
-const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
+const indicePrefix = "yorc_"
+const sequenceIndiceName = indicePrefix + "sequences"
 const esTimeout = (10 * time.Second)
 const esRefreshTimeout = (2 * time.Second)
 
@@ -96,11 +95,11 @@ func NewStore(cfg config.Configuration) store.Store {
 	}
 	InitSequenceIndices(esClient, clusterId, "logs")
 	InitSequenceIndices(esClient, clusterId, "events")
-	InitStorageIndices(esClient, indicePrefix + "logs" + indiceSuffixe)
-	InitStorageIndices(esClient, indicePrefix + "events" + indiceSuffixe)
+	InitStorageIndices(esClient, indicePrefix + "logs")
+	InitStorageIndices(esClient, indicePrefix + "events")
 	debugIndexSetting(esClient, sequenceIndiceName)
-	debugIndexSetting(esClient, indicePrefix + "logs" + indiceSuffixe)
-	debugIndexSetting(esClient, indicePrefix + "events" + indiceSuffixe)
+	debugIndexSetting(esClient, indicePrefix + "logs")
+	debugIndexSetting(esClient, indicePrefix + "events")
 	return &elasticStore{encoding.JSON, esClient, clusterId}
 }
 
@@ -367,7 +366,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      indicePrefix + indexName + indiceSuffixe,
+		Index:      indicePrefix + indexName,
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(jsonData),
 	}
@@ -478,7 +477,7 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	log.Printf("MaxInt is : %d", MaxInt)
 
 	req := esapi.DeleteByQueryRequest{
-		Index: []string{indicePrefix + indexName + indiceSuffixe},
+		Index: []string{indicePrefix + indexName},
 		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
@@ -502,7 +501,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 
 	res, err := c.esClient.Search(
 		c.esClient.Search.WithContext(context.Background()),
-		c.esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
+		c.esClient.Search.WithIndex(indicePrefix + indexName),
 		c.esClient.Search.WithSize(0),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
 	)
@@ -566,7 +565,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		time.Sleep(esTimeout)
-		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName + indiceSuffixe, query, waitIndex);
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
 		now := time.Now()
 		if hits > 0 || now.After(end) {
 			break
@@ -577,7 +576,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
 		oldLen := len(values)
-		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName + indiceSuffixe, query, waitIndex);
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
 		log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
