@@ -426,7 +426,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		log.Debugf("indexName is: %s", indexName)
 	}
 	iid, err := GetNextSequence(c.esClient, c.clusterId, indexName)
-	if err != nill {
+	if err != nil {
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
