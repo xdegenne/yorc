@@ -378,9 +378,6 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
-	// TODO: remove
-	// We still continue to store data into consul
-	consulutil.StoreConsulKey(k, data)
 
 	//log.Debugf("About to Set data into ES, data (%T): %s", data, data)
 
