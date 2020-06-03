@@ -286,16 +286,18 @@ func debugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
 }
 
 func debugESResponse(msg string, res *esapi.Response, err error) {
-	if err != nil {
-		log.Printf("[%s] Error while requesting ES : %+v", msg, err)
-	} else if res.IsError() {
-		var rsp map[string]interface{}
-		json.NewDecoder(res.Body).Decode(&rsp)
-		log.Printf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
-	} else {
-		var rsp map[string]interface{}
-		json.NewDecoder(res.Body).Decode(&rsp)
-		log.Printf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
+	if log.IsDebug() {
+		if err != nil {
+			log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
+		} else if res.IsError() {
+			var rsp map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp)
+			log.Debugf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
+		} else {
+			var rsp map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp)
+			log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
+		}
 	}
 }
 
@@ -368,8 +370,9 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
-
+	if log.IsDebug() {
+		log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
+	}
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
@@ -389,15 +392,18 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Extract indice name by parsing the key
 	indexName := c.extractIndexName(k)
-	log.Debugf("indexName is: %s", indexName)
 
+	if log.IsDebug() {
+		log.Debugf("indexName is: %s", indexName)
+	}
 	iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
 	enrichedData["iid"] = iid
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
-	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
-
+	if log.IsDebug() {
+		log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
+	}
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
