@@ -298,7 +298,6 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		Index: sequenceIndiceName,
 		DocumentID: sequence_id,
 		DocumentType: "sequence",
-		Refresh: "true",
 		Body: strings.NewReader(`{"script": "ctx._source.iid += 1", "lang": "groovy"}`),
 		Fields: []string{"iid"},
 	}
