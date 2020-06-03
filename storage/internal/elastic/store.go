@@ -41,9 +41,9 @@ const indicePrefix = "yorc_"
 // This is the name of the index used to store sequences
 const sequenceIndiceName = indicePrefix + "sequences"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-const esTimeout = (10 * time.Second)
+const esTimeout = (5 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (2 * time.Second)
+const esRefreshTimeout = (5 * time.Second)
 
 type elasticStore struct {
 	codec encoding.Codec
