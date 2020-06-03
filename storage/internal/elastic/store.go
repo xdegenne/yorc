@@ -378,10 +378,24 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 	defer res.Body.Close()
 
 	if err != nil {
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Panicf("Not request sequence update : %v", err)
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
 		return -1, err
 	}
 
 	if res.IsError() {
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Panicf("Error while requesting sequence update : %v", err)
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
+		log.Println(strings.Repeat("=", 37))
 		return -1, errors.Wrap(err, "Error while upgrading sequence iid")
 	} else {
 		// Deserialize the response into a map.
