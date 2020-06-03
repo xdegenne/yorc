@@ -41,9 +41,9 @@ const indicePrefix = "yorc_"
 // This is the name of the index used to store sequences
 const sequenceIndiceName = indicePrefix + "sequences"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-const esTimeout = (5 * time.Second)
+const esTimeout = (10 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (30 * time.Second)
+const esRefreshTimeout = (3 * time.Second)
 var pfalse = false
 
 type elasticStore struct {
@@ -503,7 +503,6 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
-		lastIndex, _ := c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
 		RefreshIndex(c.esClient, indicePrefix + indexName);
 		log.Printf("query is : %s", query)
