@@ -245,6 +245,10 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
                      "type": "long",
                      "index": false
                  }
+                 "iid_str": {
+                     "type": "keyword",
+                     "index": false
+                 }
              }
          }
      }
@@ -366,8 +370,8 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		Index: sequenceIndiceName,
 		DocumentID: sequence_id,
 		DocumentType: "sequence",
-		Body: strings.NewReader(`{"script": "ctx._source.iid += 1", "lang": "groovy"}`),
-		Fields: []string{"iid"},
+		Body: strings.NewReader(`{"script": "ctx._source.iid += 1; ctx._source.iid_str = '' + ctx._source.iid", "lang": "groovy"}`),
+		Fields: []string{"iid_str"},
 	}
 	res, err := req_update.Do(context.Background(), esClient)
 	log.Printf("Status Code for UpdateRequest: %d", res.StatusCode)
@@ -381,19 +385,26 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		return -1, errors.Wrap(err, "Error while upgrading sequence iid")
 	} else {
 		// Deserialize the response into a map.
-		var r GetNextSequenceResponse
+		var r map[string]interface{}
 		if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 			log.Panicf("Error parsing the response body, will return -1 as new sequence : %v", err)
 			return -1, errors.Wrap(err, "Error parsing the response body")
 		} else {
 			// Print the response status and indexed document version.
-			//fmt.Printf("\n update response: %+v", r)
-			//fmt.Printf("\n next id is : %s", r["fields"])
-			//var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
-			s := r.get.fields.iid[0]
-			log.Printf("Next iid for %s is : %v (%T)", s, s, s)
-			return s, nil
-			//fmt.Printf("\n[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
+			var iid_str  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid_str"].([]interface{})[0]
+			iid_int64, err := strconv.ParseInt(iid_str.(string), 10, 64)
+			if err != nil {
+				// TODO: manage error
+				log.Println(strings.Repeat("=", 37))
+				log.Println(strings.Repeat("=", 37))
+				log.Println(strings.Repeat("=", 37))
+				log.Panicf("Not able to cast %s to int64 : %v", iid_str, err)
+				log.Println(strings.Repeat("=", 37))
+				log.Println(strings.Repeat("=", 37))
+				log.Println(strings.Repeat("=", 37))
+			}
+			log.Printf("Next iid for %s is : %v (%T)", iid_int64, iid_int64, iid_int64)
+			return iid_int64, nil
 		}
 	}
 }
