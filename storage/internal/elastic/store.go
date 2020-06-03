@@ -370,7 +370,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		Index: sequenceIndiceName,
 		DocumentID: sequence_id,
 		DocumentType: "sequence",
-		Body: strings.NewReader(`{"script": "ctx._source.iid += 1; ctx._source.iid_str = '' + ctx._source.iid", "lang": "groovy"}`),
+		Body: strings.NewReader(`{"script": "ctx._source.iid += 1; ctx._source.iid_str = String.valueOf(ctx._source.iid)", "lang": "groovy"}`),
 		Fields: []string{"iid_str"},
 	}
 	res, err := req_update.Do(context.Background(), esClient)
