@@ -352,6 +352,7 @@ func GetCurrentSequence(esClient *elasticsearch6.Client, clusterId string, seque
 }
 
 func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
+	log.Debugf("Refreshing index %s", indexName)
 	req_get := esapi.IndicesRefreshRequest{
 		Index: []string{indexName},
 		ExpandWildcards: "none",
@@ -360,6 +361,7 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 	res, err := req_get.Do(context.Background(), esClient)
 	defer res.Body.Close()
 	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
+	log.Debugf("Refreshed index %s", indexName)
 }
 
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (int64, error) {
@@ -676,16 +678,16 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		log.Printf("Hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
 		time.Sleep(esTimeout)
 	}
-	if (hits > 0) {
-		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
-		RefreshIndex(c.esClient, indicePrefix + indexName);
-		log.Printf("query is : %s", query)
-		time.Sleep(esRefreshTimeout)
-		oldHits := hits
-		oldLen := len(values)
-		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
-		log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
-	}
+	//if (hits > 0) {
+	//	query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
+	//	RefreshIndex(c.esClient, indicePrefix + indexName);
+	//	log.Printf("query is : %s", query)
+	//	time.Sleep(esRefreshTimeout)
+	//	oldHits := hits
+	//	oldLen := len(values)
+	//	hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
+	//	log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
+	//}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
