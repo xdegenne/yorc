@@ -568,13 +568,13 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var hits = 0
 	var err error
 	for {
-		time.Sleep(esTimeout)
 		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
 		now := time.Now()
 		if hits > 0 || now.After(end) {
 			break
 		}
-		log.Printf("Hits is %d and timeout not reached, sleeping ...", hits)
+		log.Printf("Hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
+		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
 		time.Sleep(esRefreshTimeout)
