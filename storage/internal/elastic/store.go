@@ -37,10 +37,10 @@ import (
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
 var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)\/`)
-var indicePrefix = "nyc_"
-var indiceSuffixe = ""
-var sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
-var esTimeout = (10 * time.Second)
+const indicePrefix = "nyc_"
+const indiceSuffixe = ""
+const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
+const esTimeout = (10 * time.Second)
 
 
 type elasticStore struct {
@@ -499,11 +499,74 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
-	_, qm, err := consulutil.GetKV().Get(k, nil)
-	if err != nil || qm == nil {
-		return 0, errors.Errorf("Failed to retrieve last index for key:%q", k)
+
+	// Extract indice name and deploymentId by parsing the key
+	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
+
+	query := `
+{
+    "aggs" : {
+        "logs_or_events" : {
+            "filter" : {
+                "bool": {
+                    "must": [
+                        { "term": { "deploymentId": "` + deploymentId + `" } },
+                        { "term": { "clusterId": "` + c.clusterId + `" } }
+                     ]
+                }
+            },
+            "aggs" : {
+                "last_index" : { "max" : { "field" : "iid" } }
+            }
+        }
+    }
+}`
+	log.Printf("query is : %s", query)
+
+	res, err := c.esClient.Search(
+		c.esClient.Search.WithContext(context.Background()),
+		c.esClient.Search.WithIndex(indicePrefix + indexName + indiceSuffixe),
+		c.esClient.Search.WithSize(0),
+		c.esClient.Search.WithBody(strings.NewReader(query)),
+	)
+	if err != nil {
+		log.Printf("ERROR: %s", err)
 	}
-	return qm.LastIndex, nil
+	defer res.Body.Close()
+
+	if res.IsError() {
+		var e map[string]interface{}
+		if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+			log.Printf("error parsing the response body: %s", err)
+		} else {
+			// Print the response status and error information.
+			log.Printf("[%s] %s: %s",
+				res.Status(),
+				e["error"].(map[string]interface{})["type"],
+				e["error"].(map[string]interface{})["reason"],
+			)
+		}
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		log.Printf("Error parsing the response body: %s", err)
+	}
+
+	hits := int(r["hits"].(map[string]interface{})["total"].(float64))
+	last_index := uint64(r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64))
+
+	// Print the response status, number of results, and request duration.
+	log.Printf(
+		"[%s] %d hits; took: %dms; last_index: %d",
+		res.Status(),
+		hits,
+		int(r["took"].(float64)),
+		last_index,
+	)
+
+	return last_index, nil
 }
 
 func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
