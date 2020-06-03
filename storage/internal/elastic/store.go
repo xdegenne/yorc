@@ -365,6 +365,7 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (int64, error) {
 	sequence_id := sequenceName + "_" + clusterId;
 
+	var RetryOnConflict int = 10
 	log.Printf("Updating log sequence for indice <%s> document <%s>", sequenceIndiceName, sequence_id)
 	req_update := esapi.UpdateRequest{
 		Index: sequenceIndiceName,
@@ -372,6 +373,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		DocumentType: "sequence",
 		Body: strings.NewReader(`{"script": "ctx._source.iid += 1; ctx._source.iid_str = String.valueOf(ctx._source.iid)", "lang": "groovy"}`),
 		Fields: []string{"iid_str"},
+		RetryOnConflict: &RetryOnConflict,
 	}
 	res, err := req_update.Do(context.Background(), esClient)
 	debugESResponse("UpdateRequest:" + sequenceIndiceName + "/" + sequence_id, res, err)
@@ -382,7 +384,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
-		log.Panicf("Not request sequence update : %v", err)
+		log.Println("Not request sequence update : %v", err)
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
@@ -393,7 +395,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
-		log.Panicf("Error while requesting sequence update : %d", res.StatusCode)
+		log.Println("Error while requesting sequence update : %d", res.StatusCode)
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
@@ -413,7 +415,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 				log.Println(strings.Repeat("=", 37))
 				log.Println(strings.Repeat("=", 37))
 				log.Println(strings.Repeat("=", 37))
-				log.Panicf("Not able to cast %s to int64 : %v", iid_str, err)
+				log.Println("Not able to cast %s to int64 : %v", iid_str, err)
 				log.Println(strings.Repeat("=", 37))
 				log.Println(strings.Repeat("=", 37))
 				log.Println(strings.Repeat("=", 37))
@@ -455,7 +457,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
-		log.Panicf("Was not able to get next sequence for event: %v", err)
+		log.Println("Was not able to get next sequence for event: %v", err)
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
