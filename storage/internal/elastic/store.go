@@ -64,6 +64,9 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 		indexName = res[i][1]
 		if len(res[i]) == 3 {
 			deploymentId = res[i][2]
+			if strings.HasSuffix(deploymentId, "/") {
+				deploymentId = deploymentId[:len(deploymentId)-1]
+			}
 		}
 	}
 	return indexName, deploymentId
