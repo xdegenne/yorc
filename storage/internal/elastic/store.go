@@ -152,7 +152,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                  "deploymentId": {
                      "type": "keyword",
                      "index": true
-                 }
+                 },
                  "timestamp": {
                      "type": "keyword",
                      "index": true
