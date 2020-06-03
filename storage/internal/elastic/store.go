@@ -296,6 +296,25 @@ func debugESResponse(msg string, res *esapi.Response, err error) {
 	}
 }
 
+func GetCurrentSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (uint64, error) {
+	sequence_id := sequenceName + "_" + clusterId;
+	req_get := esapi.GetRequest{
+		Index: sequenceIndiceName,
+		DocumentType: "sequence",
+		DocumentID: sequence_id,
+	}
+	res, _ := req_get.Do(context.Background(), esClient)
+	defer res.Body.Close()
+	//debugESResponse("GetRequest:"  + sequenceIndiceName + "/" + sequence_id, res, err)
+
+	var rsp map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&rsp)
+	currentSequence := uint64(rsp["_source"].(map[string]interface{})["iid"].(float64))
+	log.Printf("currentSequence: %d", currentSequence)
+
+	return currentSequence, nil
+}
+
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (float64, error) {
 	sequence_id := sequenceName + "_" + clusterId;
 
@@ -586,7 +605,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
-		lastIndex, _ := c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
+		lastIndex, _ := GetCurrentSequence(c.esClient, c.clusterId, indexName)
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
