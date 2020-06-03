@@ -500,7 +500,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
-	query := getLastModifiedIndexQuery(indexName, deploymentId)
+	query := getLastModifiedIndexQuery(c.clusterId, deploymentId)
 	log.Printf("query is : %s", query)
 
 	res, err := c.esClient.Search(
@@ -595,7 +595,7 @@ func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
     "aggs" : {
         "logs_or_events" : {
             "filter" : {
-				{ "term": { "clusterId": "` + clusterId + `" } }
+				"term": { "clusterId": "` + clusterId + `" }
             },
             "aggs" : {
                 "last_index" : { "max" : { "field" : "iid" } }
