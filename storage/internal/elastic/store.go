@@ -70,7 +70,7 @@ type LastIndexAggregation struct {
 }
 // last_index_raw := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 type Int64Value struct {
-	value uint64
+	value uint64 `json:"value"`
 }
 
 
