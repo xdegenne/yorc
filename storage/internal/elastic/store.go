@@ -317,18 +317,16 @@ func debugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
 }
 
 func debugESResponse(msg string, res *esapi.Response, err error) {
-	if log.IsDebug() {
-		if err != nil {
-			log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
-		} else if res.IsError() {
-			var rsp map[string]interface{}
-			json.NewDecoder(res.Body).Decode(&rsp)
-			log.Debugf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
-		} else {
-			var rsp map[string]interface{}
-			json.NewDecoder(res.Body).Decode(&rsp)
-			log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
-		}
+	if err != nil {
+		log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
+	} else if res.IsError() {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Debugf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
+	} else {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
 	}
 }
 
@@ -412,9 +410,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	if log.IsDebug() {
-		log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
-	}
+	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
@@ -435,10 +431,9 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Extract indice name by parsing the key
 	indexName := c.extractIndexName(k)
 
-	if log.IsDebug() {
-		log.Debugf("indexName is: %s", indexName)
-	}
+	log.Debugf("indexName is: %s", indexName)
 	iid, err := GetNextSequence(c.esClient, c.clusterId, indexName)
+	log.Debugf("Next Sequence for event is: %d", iid)
 	if err != nil {
 		log.Printf(strings.Repeat("=", 37))
 		log.Printf(strings.Repeat("=", 37))
@@ -458,9 +453,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
-	if log.IsDebug() {
-		log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
-	}
+	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
@@ -678,16 +671,16 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		log.Printf("Hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
 		time.Sleep(esTimeout)
 	}
-	//if (hits > 0) {
-	//	query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
-	//	RefreshIndex(c.esClient, indicePrefix + indexName);
-	//	log.Printf("query is : %s", query)
-	//	time.Sleep(esRefreshTimeout)
-	//	oldHits := hits
-	//	oldLen := len(values)
-	//	hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
-	//	log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
-	//}
+	if (hits > 0) {
+		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
+		RefreshIndex(c.esClient, indicePrefix + indexName);
+		log.Printf("query is : %s", query)
+		time.Sleep(esRefreshTimeout)
+		oldHits := hits
+		oldLen := len(values)
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
+		log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
+	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
