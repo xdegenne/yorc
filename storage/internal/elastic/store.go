@@ -499,13 +499,19 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
 	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
+	return c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
+
+}
+
+func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
+
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
 	query := getLastModifiedIndexQuery(c.clusterId, deploymentId)
 	log.Printf("query is : %s", query)
 
 	res, err := c.esClient.Search(
 		c.esClient.Search.WithContext(context.Background()),
-		c.esClient.Search.WithIndex(indicePrefix + indexName),
+		c.esClient.Search.WithIndex(indexName),
 		c.esClient.Search.WithSize(0),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
 	)
@@ -561,7 +567,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
 	log.Printf("indexName is: %s, deploymentId", indexName, deploymentId)
 
-	query := getListQuery(c.clusterId, deploymentId, waitIndex)
+	query := getListQuery(c.clusterId, deploymentId, waitIndex, -1)
 	log.Printf("query is : %s", query)
 
 	now := time.Now()
@@ -580,6 +586,8 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
+		lastIndex, _ := c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
+		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
 		oldLen := len(values)
@@ -629,8 +637,29 @@ func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
 	return query
 }
 
-func getListQuery(clusterId string, deploymentId string, waitIndex uint64) string {
-	var query string
+func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIndex uint64) string {
+
+	var rangeQuery, query string
+	if maxIndex > -1 {
+		rangeQuery = `
+            {
+               "range":{
+                  "iid":{
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `,
+					 "lte":` + strconv.FormatUint(maxIndex, 10) + `
+                  }
+               }
+            }`
+	} else {
+		rangeQuery = `
+            {
+               "range":{
+                  "iid":{
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
+                  }
+               }
+            }`
+	}
 	if len(deploymentId) == 0 {
 		query = `
 {
@@ -641,14 +670,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64) strin
                "term":{
                   "clusterId":"` + clusterId + `"
                }
-            },
-            {
-               "range":{
-                  "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
-                  }
-               }
-            }
+            },` + rangeQuery + `
          ]
       }
    }
@@ -668,13 +690,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64) strin
                "term":{
                   "deploymentId":"` + deploymentId + `"
                }
-            },            {
-               "range":{
-                  "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
-                  }
-               }
-            }
+            },` + rangeQuery + `
          ]
       }
    }
