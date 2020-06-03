@@ -676,7 +676,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `,
+                     "gte":` + strconv.FormatUint(waitIndex, 10) + `,
 					 "lte":` + strconv.FormatUint(maxIndex, 10) + `
                   }
                }
@@ -686,7 +686,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
+                     "gte":` + strconv.FormatUint(waitIndex, 10) + `
                   }
                }
             }`
