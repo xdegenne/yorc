@@ -35,7 +35,7 @@ import (
 
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
-var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)?\/?`)
+var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
 const indicePrefix = "nyc_"
 const indiceSuffixe = ""
 const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
@@ -497,24 +497,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Printf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
-	query := `
-{
-    "aggs" : {
-        "logs_or_events" : {
-            "filter" : {
-                "bool": {
-                    "must": [
-                        { "term": { "deploymentId": "` + deploymentId + `" } },
-                        { "term": { "clusterId": "` + c.clusterId + `" } }
-                     ]
-                }
-            },
-            "aggs" : {
-                "last_index" : { "max" : { "field" : "iid" } }
-            }
-        }
-    }
-}`
+	query := getLastModifiedIndexQuery(indexName, deploymentId)
 	log.Printf("query is : %s", query)
 
 	res, err := c.esClient.Search(
@@ -599,6 +582,45 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
+}
+
+func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
+	var query string
+	if len(deploymentId) == 0 {
+		query = `
+{
+    "aggs" : {
+        "logs_or_events" : {
+            "filter" : {
+				{ "term": { "clusterId": "` + clusterId + `" } }
+            },
+            "aggs" : {
+                "last_index" : { "max" : { "field" : "iid" } }
+            }
+        }
+    }
+}`
+	} else {
+		query = `
+{
+    "aggs" : {
+        "logs_or_events" : {
+            "filter" : {
+                "bool": {
+                    "must": [
+                        { "term": { "deploymentId": "` + deploymentId + `" } },
+                        { "term": { "clusterId": "` + clusterId + `" } }
+                     ]
+                }
+            },
+            "aggs" : {
+                "last_index" : { "max" : { "field" : "iid" } }
+            }
+        }
+    }
+}`
+	}
+	return query
 }
 
 func getListQuery(clusterId string, deploymentId string, waitIndex uint64) string {
