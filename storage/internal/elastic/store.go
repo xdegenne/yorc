@@ -153,6 +153,10 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                      "type": "keyword",
                      "index": true
                  }
+                 "timestamp": {
+                     "type": "keyword",
+                     "index": true
+                 }
              }
          }
      }
@@ -737,9 +741,7 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		c.esClient.Search.WithIndex(index),
 		c.esClient.Search.WithSize(1000),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
-		c.esClient.Search.WithSort("iid:asc"),
-		c.esClient.Search.WithTrackTotalHits(true),
-		c.esClient.Search.WithPretty(),
+		c.esClient.Search.WithSort("timestamp:asc"),
 	)
 	if err != nil {
 		log.Printf("ERROR: %s", err)
@@ -783,7 +785,9 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
 		iid := source["iid"]
 		iid_uint64 := uint64(iid.(float64))
-		lastIndex = iid_uint64
+		if iid_uint64 > lastIndex {
+			lastIndex = iid_uint64
+		}
 		//fmt.Printf("\n * ID=%s, %s", id, source)
 		jsonString, _ := json.Marshal(source)
 		log.Debugf("\n * ID=%s, %s, %T", id, jsonString, jsonString)
