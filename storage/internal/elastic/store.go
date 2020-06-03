@@ -130,6 +130,9 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 		requestBodyData := `
 {
+     "settings": {
+         "refresh_interval": "1s"
+     },
      "mappings": {
          "logs_or_event": {
              "_all": {"enabled": false},
