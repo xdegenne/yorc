@@ -44,6 +44,7 @@ const sequenceIndiceName = indicePrefix + "sequences"
 const esTimeout = (5 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
 const esRefreshTimeout = (10 * time.Second)
+var pfalse = false
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -110,7 +111,6 @@ func NewStore(cfg config.Configuration) store.Store {
 func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 	log.Printf("Checking if index <%s> already exists", indiceName)
-	pfalse := false
 
 	// check if the sequences index exists
 	req := esapi.IndicesExistsRequest{
@@ -181,7 +181,6 @@ func InitSequenceIndices(esClient *elasticsearch6.Client, clusterId string, sequ
 
 	sequence_id := sequenceName + "_" + clusterId;
 	log.Printf("Initializing index <%s> with document <%s> for for sequence management.", sequenceIndiceName, sequence_id)
-	pfalse := false
 
 	// check if the sequences index exists
 	req := esapi.IndicesExistsRequest{
@@ -313,6 +312,17 @@ func GetCurrentSequence(esClient *elasticsearch6.Client, clusterId string, seque
 	log.Printf("currentSequence: %d", currentSequence)
 
 	return currentSequence, nil
+}
+
+func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
+	req_get := esapi.IndicesRefreshRequest{
+		Index: []string{indexName},
+		ExpandWildcards: "none",
+		AllowNoIndices: &pfalse,
+	}
+	res, err := req_get.Do(context.Background(), esClient)
+	defer res.Body.Close()
+	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
 
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (float64, error) {
@@ -607,6 +617,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	if (hits > 0) {
 		lastIndex, _ := GetCurrentSequence(c.esClient, c.clusterId, indexName)
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
+		RefreshIndex(c.esClient, indicePrefix + indexName);
 		log.Printf("query is : %s", query)
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
