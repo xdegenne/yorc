@@ -534,7 +534,10 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	}
 
 	hits := int(r["hits"].(map[string]interface{})["total"].(float64))
-	last_index := uint64(r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64))
+	var last_index uint64 = 0
+	if (hits > 0) {
+		last_index = uint64(r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64))
+	}
 
 	// Print the response status, number of results, and request duration.
 	log.Printf(
