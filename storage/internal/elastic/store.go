@@ -41,15 +41,42 @@ const indicePrefix = "yorc_"
 // This is the name of the index used to store sequences
 const sequenceIndiceName = indicePrefix + "sequences"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-const esTimeout = (5 * time.Second)
+const esTimeout = (10 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (30 * time.Second)
+const esRefreshTimeout = (3 * time.Second)
 var pfalse = false
 
 type elasticStore struct {
 	codec encoding.Codec
 	esClient *elasticsearch6.Client
 	clusterId string
+}
+
+type LastIndexResponse struct {
+	hits Hits `json:"hits"`
+	aggregations LogOrEventAggregation `json:"aggregations"`
+}
+type Hits struct {
+	total int `json:"total"`
+}
+type LogOrEventAggregation struct {
+	logs_or_events LastIndexAggregation `json:"logs_or_events"`
+}
+type LastIndexAggregation struct {
+	last_index Int64Value `json:"last_index"`
+}
+type Int64Value struct {
+	value int64 `json:"value"`
+}
+// var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
+type GetNextSequenceResponse struct {
+	get GetNextSequenceResponseGet `json:"get"`
+}
+type GetNextSequenceResponseGet struct {
+	fields GetNextSequenceResponseIid `json:"fields"`
+}
+type GetNextSequenceResponseIid struct {
+	iid []int64 `json:"iid"`
 }
 
 func (c *elasticStore) extractIndexName(k string) string {
@@ -153,9 +180,9 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                      "type": "keyword",
                      "index": true
                  },
-                 "timestamp": {
+                 "iid_str": {
                      "type": "keyword",
-                     "index": true
+                     "index": false
                  }
              }
          }
@@ -331,7 +358,7 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
 
-func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (float64, error) {
+func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (int64, error) {
 	sequence_id := sequenceName + "_" + clusterId;
 
 	log.Printf("Updating log sequence for indice <%s> document <%s>", sequenceIndiceName, sequence_id)
@@ -354,16 +381,18 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		return -1, errors.Wrap(err, "Error while upgrading sequence iid")
 	} else {
 		// Deserialize the response into a map.
-		var r map[string]interface{}
+		var r GetNextSequenceResponse
 		if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+			log.Panicf("Error parsing the response body, will return -1 as new sequence : %v", err)
 			return -1, errors.Wrap(err, "Error parsing the response body")
 		} else {
 			// Print the response status and indexed document version.
 			//fmt.Printf("\n update response: %+v", r)
 			//fmt.Printf("\n next id is : %s", r["fields"])
-			var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
-			log.Printf("Next iid for %s is : %v (%T), float representation: %f, uint64 conversion: %d", sequence_id, s, s, s.(float64), uint64(s.(float64)))
-			return s.(float64), nil
+			//var s  = ((r["get"].(map[string]interface{}))["fields"].(map[string]interface{}))["iid"].([]interface{})[0]
+			s := r.get.fields.iid[0]
+			log.Printf("Next iid for %s is : %v (%T)", s, s, s)
+			return s, nil
 			//fmt.Printf("\n[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
 		}
 	}
@@ -396,8 +425,23 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if log.IsDebug() {
 		log.Debugf("indexName is: %s", indexName)
 	}
-	iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
+	iid, err := GetNextSequence(c.esClient, c.clusterId, indexName)
+	if err != nill {
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Panicf("Was not able to get next sequence for event: %v", err)
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+		log.Printf(strings.Repeat("=", 37))
+	}
 	enrichedData["iid"] = iid
+	// We also add it's string representation to avoid decoding issue
+	enrichedData["iid_str"] = strconv.FormatInt(iid, 10)
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
@@ -570,27 +614,26 @@ func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 		}
 	}
 
-	var r map[string]interface{}
+	var r LastIndexResponse
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		log.Printf("Error parsing the response body: %s", err)
 	}
 
-	hits := int(r["hits"].(map[string]interface{})["total"].(float64))
-	var last_index uint64 = 0
+	hits := r.hits.total
+	var last_index int64 = 0
 	if (hits > 0) {
-		last_index = uint64(r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64))
+		last_index = r.aggregations.logs_or_events.last_index.value
 	}
 
 	// Print the response status, number of results, and request duration.
 	log.Printf(
-		"[%s] %d hits; took: %dms; last_index: %d",
+		"[%s] %d hits; last_index: %d",
 		res.Status(),
 		hits,
-		int(r["took"].(float64)),
 		last_index,
 	)
 
-	return last_index, nil
+	return uint64(last_index), nil
 }
 
 func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
@@ -623,7 +666,6 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
-		lastIndex, _ := GetCurrentSequence(c.esClient, c.clusterId, indexName)
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
 		RefreshIndex(c.esClient, indicePrefix + indexName);
 		log.Printf("query is : %s", query)
@@ -684,7 +726,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gte":` + strconv.FormatUint(waitIndex, 10) + `,
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `,
 					 "lte":` + strconv.FormatUint(maxIndex, 10) + `
                   }
                }
@@ -694,7 +736,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gte":` + strconv.FormatUint(waitIndex, 10) + `
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
                   }
                }
             }`
@@ -744,7 +786,7 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		c.esClient.Search.WithIndex(index),
 		c.esClient.Search.WithSize(1000),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
-		c.esClient.Search.WithSort("timestamp:asc"),
+		c.esClient.Search.WithSort("iid:asc"),
 	)
 	if err != nil {
 		log.Printf("ERROR: %s", err)
@@ -786,11 +828,21 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		iid := source["iid"]
-		iid_uint64 := uint64(iid.(float64))
-		if iid_uint64 > lastIndex {
-			lastIndex = iid_uint64
+		iid := source["iid_str"]
+		iid_uint64, err := strconv.ParseUint(iid.(string), 10, 64)
+		if err != nil {
+			// TODO: manage error
+			log.Println(strings.Repeat("=", 37))
+			log.Println(strings.Repeat("=", 37))
+			log.Println(strings.Repeat("=", 37))
+			log.Panicf("Not able to cast %s to uint64 : %v", iid, err)
+			log.Println(strings.Repeat("=", 37))
+			log.Println(strings.Repeat("=", 37))
+			log.Println(strings.Repeat("=", 37))
+
 		}
+		lastIndex = iid_uint64
+
 		//fmt.Printf("\n * ID=%s, %s", id, source)
 		jsonString, _ := json.Marshal(source)
 		log.Debugf("\n * ID=%s, %s, %T", id, jsonString, jsonString)
