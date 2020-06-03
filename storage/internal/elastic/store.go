@@ -36,7 +36,7 @@ import (
 
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
-var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)\/?`)
+var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)?\/?`)
 const indicePrefix = "nyc_"
 const indiceSuffixe = ""
 const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
@@ -63,20 +63,22 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 	res := indexNameAndDeploymentIdRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
-		deploymentId = res[i][2]
+		if len(res[i]) == 3 {
+			deploymentId = res[i][2]
+		}
 	}
 	return indexName, deploymentId
 }
 
-func (c *elasticStore) _extractIndexNameAndTimestamp(k string) (string, string) {
-	var indexName, timestamp string
-	res := indexNameRegex.FindAllStringSubmatch(k, -1)
-	for i := range res {
-		indexName = res[i][1]
-		timestamp = res[i][2]
-	}
-	return indexName, timestamp
-}
+//func (c *elasticStore) _extractIndexNameAndTimestamp(k string) (string, string) {
+//	var indexName, timestamp string
+//	res := indexNameRegex.FindAllStringSubmatch(k, -1)
+//	for i := range res {
+//		indexName = res[i][1]
+//		timestamp = res[i][2]
+//	}
+//	return indexName, timestamp
+//}
 
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration) store.Store {
@@ -339,7 +341,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// We still continue to store data into consul
 	consulutil.StoreConsulKey(k, data)
 
-	log.Printf("About to Set data into ES, data (%T): %s", data, data)
+	//log.Debugf("About to Set data into ES, data (%T): %s", data, data)
 
 	// enrich the data by adding the clusterId
 	var v2 interface{}
@@ -349,14 +351,14 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Extract indice name by parsing the key
 	indexName := c.extractIndexName(k)
-	log.Printf("indexName is: %s", indexName)
+	log.Debugf("indexName is: %s", indexName)
 
 	iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
 	enrichedData["iid"] = iid
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
-	log.Printf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
+	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
@@ -576,10 +578,10 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 
 	// Extract indice name by parsing the key
-	indexName := c.extractIndexName(k)
-	log.Printf("indexName is: %s", indexName)
+	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	log.Printf("indexName is: %s, deploymentId", indexName, deploymentId)
 
-	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, {"range": { "iid" : {"gt": ` + strconv.FormatUint(waitIndex, 10) + `}}}]}}}`
+	query := getListQuery(c.clusterId, deploymentId, waitIndex)
 	log.Printf("query is : %s", query)
 
 	now := time.Now()
@@ -600,6 +602,60 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
+}
+
+func getListQuery(clusterId string, deploymentId string, waitIndex uint64) string {
+	var query string
+	if deploymentId == "" {
+		query = `
+{
+   "query":{
+      "bool":{
+         "must":[
+            {
+               "term":{
+                  "clusterId":"` + clusterId + `"
+               }
+            },
+            {
+               "range":{
+                  "iid":{
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
+                  }
+               }
+            }
+         ]
+      }
+   }
+}`
+	} else {
+		query = `
+{
+   "query":{
+      "bool":{
+         "must":[
+            {
+               "term":{
+                  "clusterId":"` + clusterId + `"
+               }
+            },
+            {
+               "term":{
+                  "deploymentId":"` + deploymentId + `"
+               }
+            },            {
+               "range":{
+                  "iid":{
+                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
+                  }
+               }
+            }
+         ]
+      }
+   }
+}`
+	}
+	return query
 }
 
 func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int, []store.KeyValueOut, uint64, error) {
@@ -670,35 +726,3 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 	return hits, values, lastIndex, nil
 }
 
-func (c *elasticStore) _List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
-	log.Printf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
-	if err := utils.CheckKey(k); err != nil {
-		return nil, 0, err
-	}
-
-	kvps, qm, err := consulutil.GetKV().List(k, &api.QueryOptions{WaitIndex: waitIndex, WaitTime: timeout})
-	if err != nil || qm == nil {
-		return nil, 0, err
-	}
-	if kvps == nil {
-		return nil, qm.LastIndex, err
-	}
-
-	values := make([]store.KeyValueOut, 0)
-	for _, kvp := range kvps {
-		var value map[string]interface{}
-		if err := c.codec.Unmarshal(kvp.Value, &value); err != nil {
-			return nil, 0, errors.Wrapf(err, "failed to unmarshal stored value: %q", string(kvp.Value))
-		}
-		log.Printf("Appending result with Key: %s, ModifyIndex: %d", kvp.Key, kvp.ModifyIndex)
-
-		values = append(values, store.KeyValueOut{
-			Key:             kvp.Key,
-			LastModifyIndex: kvp.ModifyIndex,
-			Value:           value,
-			RawValue:        kvp.Value,
-		})
-	}
-	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, qm.LastIndex, len(values))
-	return values, qm.LastIndex, nil
-}
