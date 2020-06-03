@@ -40,7 +40,7 @@ const indicePrefix = "nyc_"
 const indiceSuffixe = ""
 const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
 const esTimeout = (10 * time.Second)
-
+const esRefreshTimeout = (2 * time.Second)
 
 type elasticStore struct {
 	codec encoding.Codec
@@ -298,6 +298,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		Index: sequenceIndiceName,
 		DocumentID: sequence_id,
 		DocumentType: "sequence",
+		Refresh: "true",
 		Body: strings.NewReader(`{"script": "ctx._source.iid += 1", "lang": "groovy"}`),
 		Fields: []string{"iid"},
 	}
@@ -329,7 +330,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	log.Printf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
+	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
 
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
@@ -378,14 +379,6 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	} else if res.IsError() {
 		return errors.Errorf("Error while indexing document, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
 	} else {
-		// Deserialize the response into a map.
-		var r map[string]interface{}
-		if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-			log.Printf("Error parsing the response body: %s", err)
-		} else {
-			// Print the response status and indexed document version.
-			log.Printf("[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
-		}
 		return nil
 	}
 }
@@ -595,7 +588,13 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		}
 		log.Printf("Hits is %d and timeout not reached, sleeping ...", hits)
 	}
-
+	if (hits > 0) {
+		time.Sleep(esRefreshTimeout)
+		oldHits := hits
+		oldLen := len(values)
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName + indiceSuffixe, query, waitIndex);
+		log.Printf("Hits was %d, oldLen was %d, so after sleeping few seconds to wait for ES refresh and requerying it, hits is now %d and len is %d ...", oldHits, oldLen, hits, len(values))
+	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
