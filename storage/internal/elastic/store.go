@@ -605,7 +605,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 
 func getListQuery(clusterId string, deploymentId string, waitIndex uint64) string {
 	var query string
-	if deploymentId == "" {
+	if len(deploymentId) == 0 {
 		query = `
 {
    "query":{
