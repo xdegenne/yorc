@@ -36,7 +36,7 @@ import (
 
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
-var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)\/`)
+var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/(.+)\/?`)
 const indicePrefix = "nyc_"
 const indiceSuffixe = ""
 const sequenceIndiceName = indicePrefix + "anothersequence" + indiceSuffixe
