@@ -610,6 +610,9 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		c.esClient.Search.WithSort("iid:asc"),
 	)
 	if err != nil {
+		log.Println(strings.Repeat("§", 37))
+		log.Printf("Failed to perform ES search on index %s, query was: <%s>, error was: %+v", index, query, err)
+		log.Println(strings.Repeat("§", 37))
 		return 0, values, waitIndex, errors.Wrapf(err, "Failed to perform ES search on index %s, query was: <%s>, error was: %+v", index, query, err)
 	}
 	defer res.Body.Close()
@@ -617,14 +620,23 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 	if res.IsError() {
 		var e map[string]interface{}
 		if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+			log.Println(strings.Repeat("§", 37))
+			log.Printf("An error occurred while performing ES search on index %s, query was: <%s>, response code was %d (%s). Wasn't able to decode response body !", index, query, res.StatusCode, res.Status())
+			log.Println(strings.Repeat("§", 37))
 			return 0, values, waitIndex, errors.Wrapf(err, "An error occurred while performing ES search on index %s, query was: <%s>, response code was %d (%s). Wasn't able to decode response body !", index, query, res.StatusCode, res.Status())
 		} else {
+			log.Println(strings.Repeat("§", 37))
+			log.Printf("An error occurred while performing ES search on index %s, query was: <%s>, response code was %d (%s). Response body was: %+v", index, query, res.StatusCode, res.Status(), e)
+			log.Println(strings.Repeat("§", 37))
 			return 0, values, waitIndex, errors.Wrapf(err, "An error occurred while performing ES search on index %s, query was: <%s>, response code was %d (%s). Response body was: %+v", index, query, res.StatusCode, res.Status(), e)
 		}
 	}
 
 	var r map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		log.Println(strings.Repeat("§", 37))
+		log.Printf("Not able to decode ES response while performing ES search on index %s, query was: <%s>, response code was %d (%s)", index, query, res.StatusCode, res.Status())
+		log.Println(strings.Repeat("§", 37))
 		return 0, values, waitIndex, errors.Wrapf(err, "Not able to decode ES response while performing ES search on index %s, query was: <%s>, response code was %d (%s)", index, query, res.StatusCode, res.Status())
 	}
 
@@ -641,11 +653,15 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 		iid := source["iid_str"]
 		iid_uint64, err := strconv.ParseUint(iid.(string), 10, 64)
 		if err != nil {
+			log.Println(strings.Repeat("#", 37))
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source);
+			log.Println(strings.Repeat("#", 37))
 		} else {
 			jsonString, err := json.Marshal(source)
 			if err != nil {
+				log.Println(strings.Repeat("#", 37))
 				log.Printf("Not able to marshall document source, document id: %s, source: %+v, ignoring this document !", id, source);
+				log.Println(strings.Repeat("#", 37))
 			} else {
 				lastIndex = iid_uint64
 				// append value to result
