@@ -41,7 +41,7 @@ const indicePrefix = "yorc_"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
 const esTimeout = (10 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (3 * time.Second)
+const esRefreshTimeout = (10 * time.Second)
 var pfalse = false
 
 type elasticStore struct {
