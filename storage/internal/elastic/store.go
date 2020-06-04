@@ -489,7 +489,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if len(values) > oldLen {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull, hit was %d (and %d after timeout)", len(values), oldLen, esRefreshTimeout, oldHits, hits)
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), hit was %d (and %d after timeout)", len(values), oldLen, esRefreshTimeout, indicePrefix + indexName, oldHits, hits)
 		}
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
