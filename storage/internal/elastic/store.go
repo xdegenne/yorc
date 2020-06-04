@@ -213,18 +213,16 @@ func debugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
 }
 
 func debugESResponse(msg string, res *esapi.Response, err error) {
-	if log.IsDebug() {
-		if err != nil {
-			log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
-		} else if res.IsError() {
-			var rsp map[string]interface{}
-			json.NewDecoder(res.Body).Decode(&rsp)
-			log.Debugf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
-		} else {
-			var rsp map[string]interface{}
-			json.NewDecoder(res.Body).Decode(&rsp)
-			log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
-		}
+	if err != nil {
+		log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
+	} else if res.IsError() {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Debugf("[%s] Response Error while requesting ES (%d): %+v", msg, res.StatusCode, rsp)
+	} else {
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
 	}
 }
 
@@ -240,9 +238,8 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 }
 
 func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	if log.IsDebug() {
-		log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
-	}
+	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
+
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
@@ -263,10 +260,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Extract indice name and timestamp by parsing the key
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
 
-
-	if log.IsDebug() {
-		log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
-	}
+	log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
 	//iid, _ := GetNextSequence(c.esClient, c.clusterId, indexName)
 	//enrichedData["iid"] = iid
 
@@ -282,9 +276,8 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
-	if log.IsDebug() {
-		log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
-	}
+
+	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
@@ -504,7 +497,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 	if (hits > 0) {
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
-		RefreshIndex(c.esClient, indicePrefix + indexName);
+		//RefreshIndex(c.esClient, indicePrefix + indexName);
 		log.Printf("query is : %s", query)
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
