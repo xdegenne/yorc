@@ -43,7 +43,7 @@ const sequenceIndiceName = indicePrefix + "sequences"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
 const esTimeout = (10 * time.Second)
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (3 * time.Second)
+const esRefreshTimeout = (10 * time.Second)
 var pfalse = false
 
 type elasticStore struct {
@@ -384,7 +384,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
-		log.Println("Not request sequence update : %v", err)
+		log.Printf("Not request sequence update : %v", err)
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
@@ -395,7 +395,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
-		log.Println("Error while requesting sequence update : %d", res.StatusCode)
+		log.Printf("Error while requesting sequence update : %d", res.StatusCode)
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
 		log.Println(strings.Repeat("=", 37))
@@ -690,7 +690,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 	if (hits > 0) {
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
-		RefreshIndex(c.esClient, indicePrefix + indexName);
+		//RefreshIndex(c.esClient, indicePrefix + indexName);
 		log.Printf("query is : %s", query)
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
