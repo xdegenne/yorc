@@ -51,20 +51,21 @@ type elasticStore struct {
 }
 
 type LastIndexResponse struct {
-	hits Hits `json:"hits"`
-	aggregations LogOrEventAggregation `json:"aggregations"`
+	hits Hits 							`json:"hits"`
+	aggregations LogOrEventAggregation 	`json:"aggregations"`
 }
 type Hits struct {
-	total int `json:"total"`
+	total int 	`json:"total"`
 }
 type LogOrEventAggregation struct {
-	logs_or_events LastIndexAggregation `json:"logs_or_events"`
+	logs_or_events LastIndexAggregation 	`json:"logs_or_events"`
 }
 type LastIndexAggregation struct {
-	last_index Int64Value `json:"last_index"`
+	doc_count  int 			`json:"doc_count"`
+	last_index StringValue 	`json:"last_index"`
 }
-type Int64Value struct {
-	value uint64 `json:"value"`
+type StringValue struct {
+	value string 	`json:"value"`
 }
 
 func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
@@ -153,12 +154,8 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
                      "index": true
                  },
                  "iid": {
-                     "type": "long",
-                     "index": true
-                 },
-                 "iid_str": {
                      "type": "keyword",
-                     "index": false
+                     "index": true
                  }
              }
          }
@@ -252,9 +249,9 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
 	// Add the property iid to the document
-	enrichedData["iid"] = iid
+	//enrichedData["iid"] = iid
 	// We also add it's string representation to avoid decoding issue
-	enrichedData["iid_str"] = strconv.FormatInt(iid, 10)
+	enrichedData["iid"] = strconv.FormatInt(iid, 10)
 
 	var jsonData []byte
 	jsonData, err = json.Marshal(enrichedData)
@@ -394,6 +391,15 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 
 }
 
+func ParseInt64StringToUint64(value string) (uint64, error) {
+	valueInt, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, errors.Wrapf(err, "Not able to parse string: %s to int64, error was: %+v", value, err)
+	}
+	result := uint64(valueInt)
+	return result, nil
+}
+
 func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
 
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
@@ -433,7 +439,10 @@ func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	hits := r.hits.total
 	var last_index uint64 = 0
 	if (hits > 0) {
-		last_index = r.aggregations.logs_or_events.last_index.value
+		last_index, err = ParseInt64StringToUint64(r.aggregations.logs_or_events.last_index.value)
+		if err != nil {
+			return last_index, err
+		}
 	}
 
 	// Print the response status, number of results, and request duration.
@@ -543,8 +552,8 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `,
-					 "lte":` + strconv.FormatUint(maxIndex, 10) + `
+                     "gt": "` + strconv.FormatUint(waitIndex, 10) + `",
+					 "lte": "` + strconv.FormatUint(maxIndex, 10) + `"
                   }
                }
             }`
@@ -553,7 +562,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt":` + strconv.FormatUint(waitIndex, 10) + `
+                     "gt": "` + strconv.FormatUint(waitIndex, 10) + `"
                   }
                }
             }`
@@ -650,8 +659,8 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		iid := source["iid_str"]
-		iid_uint64, err := strconv.ParseUint(iid.(string), 10, 64)
+		iid := source["iid"]
+		iid_int64, err := ParseInt64StringToUint64(iid.(string))
 		if err != nil {
 			log.Println(strings.Repeat("#", 37))
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source);
@@ -663,11 +672,11 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 				log.Printf("Not able to marshall document source, document id: %s, source: %+v, ignoring this document !", id, source);
 				log.Println(strings.Repeat("#", 37))
 			} else {
-				lastIndex = iid_uint64
+				lastIndex = iid_int64
 				// append value to result
 				values = append(values, store.KeyValueOut{
 					Key:             id,
-					LastModifyIndex: iid_uint64,
+					LastModifyIndex: iid_int64,
 					Value:           source,
 					RawValue:        jsonString,
 				})
