@@ -489,7 +489,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 	if (hits > 0) {
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
-		//RefreshIndex(c.esClient, indicePrefix + indexName);
+		RefreshIndex(c.esClient, indicePrefix + indexName);
 		time.Sleep(esRefreshTimeout)
 		oldLen := len(values)
 		oldHits := hits
