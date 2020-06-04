@@ -365,7 +365,7 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequenceName string) (int64, error) {
 	sequence_id := sequenceName + "_" + clusterId;
 
-	var RetryOnConflict int = 10
+	var RetryOnConflict int = 50
 	log.Printf("Updating log sequence for indice <%s> document <%s>", sequenceIndiceName, sequence_id)
 	req_update := esapi.UpdateRequest{
 		Index: sequenceIndiceName,
