@@ -376,7 +376,7 @@ func GetNextSequence(esClient *elasticsearch6.Client, clusterId string, sequence
 		RetryOnConflict: &RetryOnConflict,
 	}
 	res, err := req_update.Do(context.Background(), esClient)
-	debugESResponse("UpdateRequest:" + sequenceIndiceName + "/" + sequence_id, res, err)
+	//debugESResponse("UpdateRequest:" + sequenceIndiceName + "/" + sequence_id, res, err)
 	log.Printf("Status Code for UpdateRequest: %d", res.StatusCode)
 	defer res.Body.Close()
 
