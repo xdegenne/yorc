@@ -476,7 +476,8 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var hits = 0
 	var err error
 	for {
-		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
+		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex, 1, "desc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -488,17 +489,19 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
+		// we do have something to retrieve, we will just wait esRefreshTimeout to let any document that has just been stored to be indexed
+		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
 		query := getListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
+		// force refresh for this index
 		RefreshIndex(c.esClient, indicePrefix + indexName);
 		time.Sleep(esRefreshTimeout)
-		oldLen := len(values)
 		oldHits := hits
-		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex);
+		hits, values, lastIndex, err = c.ListEs(indicePrefix + indexName, query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
-		if len(values) > oldLen {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), hit was %d (and %d after timeout)", len(values), oldLen, esRefreshTimeout, indicePrefix + indexName, oldHits, hits)
+		if hits > oldHits {
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d values have documents fetched", hits, oldHits, esRefreshTimeout, indicePrefix + indexName, len(values))
 		}
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
@@ -544,6 +547,17 @@ func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
 	return query
 }
 
+// the max uint is 9223372036854775807 (19 cars), this is the maximum nano for a time (2262-04-12 00:47:16.854775807 +0100 CET)
+// since we use nanotimestamp as ID for events and logs, and since we store this ID as string in ES index, we must ensure that
+// the string will be comparable.
+func getSortableStringFromUint64(nanoTimestamp uint64) string {
+	nanoTimestampStr := strconv.FormatUint(nanoTimestamp, 10)
+	if len(nanoTimestampStr) < 19 {
+		nanoTimestampStr = strings.Repeat("0", 19 - len(nanoTimestampStr)) + nanoTimestampStr
+	}
+	return nanoTimestampStr
+}
+
 func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIndex uint64) string {
 
 	var rangeQuery, query string
@@ -552,8 +566,8 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt": "` + strconv.FormatUint(waitIndex, 10) + `",
-					 "lte": "` + strconv.FormatUint(maxIndex, 10) + `"
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `",
+					 "lte": "` + getSortableStringFromUint64(maxIndex) + `"
                   }
                }
             }`
@@ -562,7 +576,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt": "` + strconv.FormatUint(waitIndex, 10) + `"
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `"
                   }
                }
             }`
@@ -606,7 +620,7 @@ func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
 	return query
 }
 
-func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int, []store.KeyValueOut, uint64, error) {
+func (c *elasticStore) ListEs(index string, query string, waitIndex uint64, size int, order string) (int, []store.KeyValueOut, uint64, error) {
 	log.Debugf("Search ES %s using query: %s", index, query)
 
 	values := make([]store.KeyValueOut, 0)
@@ -614,9 +628,9 @@ func (c *elasticStore) ListEs(index string, query string, waitIndex uint64) (int
 	res, err := c.esClient.Search(
 		c.esClient.Search.WithContext(context.Background()),
 		c.esClient.Search.WithIndex(index),
-		c.esClient.Search.WithSize(1000),
+		c.esClient.Search.WithSize(size),
 		c.esClient.Search.WithBody(strings.NewReader(query)),
-		c.esClient.Search.WithSort("iid:asc"),
+		c.esClient.Search.WithSort("iid:" + order),
 	)
 	if err != nil {
 		log.Println(strings.Repeat("§", 37))
