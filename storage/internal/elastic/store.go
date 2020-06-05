@@ -96,7 +96,7 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
-
+	// get specific config from storage properties
 	storeProperties := storeConfig.properties.GetDuration("es_query_period")
 	if (storeProperties.IsSet("es_query_period")) {
 		esTimeout = storeConfig.properties.GetDuration("es_query_period")
@@ -119,9 +119,6 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	if len(clusterId) == 0 {
 		clusterId = cfg.ServerID
 	}
-
-
-	properties
 
 	InitStorageIndices(esClient, indicePrefix + "logs")
 	InitStorageIndices(esClient, indicePrefix + "events")
@@ -519,7 +516,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if hits > oldHits {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d values have documents fetched", hits, oldHits, esRefreshTimeout, indicePrefix + indexName, len(values))
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, esRefreshTimeout, indicePrefix + indexName, len(values))
 		}
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
