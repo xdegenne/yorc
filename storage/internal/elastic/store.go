@@ -37,11 +37,11 @@ var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)
 //var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
 var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
 // All index used by yorc will be prefixed by this prefix
-const indicePrefix = "yorc_"
+var indicePrefix = "yorc_"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-const esTimeout = 5 * time.Second
+var esTimeout = 5 * time.Second
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const esRefreshTimeout = (5 * time.Second)
+var esRefreshTimeout = (5 * time.Second)
 var pfalse = false
 
 type elasticStore struct {
@@ -94,8 +94,22 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 }
 
 // NewStore returns a new Elastic store
-func NewStore(cfg config.Configuration) store.Store {
+func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
+
+	storeProperties := storeConfig.properties.GetDuration("es_query_period")
+	if (storeProperties.IsSet("es_query_period")) {
+		esTimeout = storeConfig.properties.GetDuration("es_query_period")
+	}
+	if (storeProperties.IsSet("es_refresh_wait_timeout")) {
+		esRefreshTimeout = storeConfig.properties.GetDuration("es_refresh_wait_timeout")
+	}
+	if (storeProperties.IsSet("index_prefix")) {
+		indicePrefix = storeConfig.properties.GetString("index_prefix")
+	}
+	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esTimeout, esRefreshTimeout)
+	log.Printf("Index prefix will be %s", indicePrefix)
+
 	log.Printf("Here are the ES cluster info")
 	log.Println(esClient.Info());
 	//log.Printf("ServerID: %s", cfg.ServerID)
@@ -105,6 +119,10 @@ func NewStore(cfg config.Configuration) store.Store {
 	if len(clusterId) == 0 {
 		clusterId = cfg.ServerID
 	}
+
+
+	properties
+
 	InitStorageIndices(esClient, indicePrefix + "logs")
 	InitStorageIndices(esClient, indicePrefix + "events")
 	debugIndexSetting(esClient, indicePrefix + "logs")
