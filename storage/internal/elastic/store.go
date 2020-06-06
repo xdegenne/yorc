@@ -31,6 +31,9 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
+	"net/http"
+	"net"
+	"crypto/tls"
 )
 
 var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -95,9 +98,22 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
-	esClient, _ := elasticsearch6.NewDefaultClient()
+
 	// get specific config from storage properties
 	storeProperties := storeConfig.Properties
+	var esConfig elasticsearch6.Config
+	if (storeProperties.IsSet("es_urls")) {
+		es_urls := storeProperties.GetStringSlice("es_urls")
+		if (es_urls == nil || len(es_urls) == 0) {
+			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get("es_urls"))
+		}
+		esConfig = elasticsearch6.Config{
+			Addresses: es_urls,
+		}
+	} else {
+		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
+	}
+
 	if (storeProperties.IsSet("es_query_period")) {
 		esTimeout = storeProperties.GetDuration("es_query_period")
 	}
@@ -110,7 +126,9 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esTimeout, esRefreshTimeout)
 	log.Printf("Index prefix will be %s", indicePrefix)
 
-	log.Printf("Here are the ES cluster info")
+	esClient, _ := elasticsearch6.NewClient(esConfig)
+
+	log.Printf("Here is the ES cluster info")
 	log.Println(esClient.Info());
 	//log.Printf("ServerID: %s", cfg.ServerID)
 	//var clusterId string = cfg.ServerID
