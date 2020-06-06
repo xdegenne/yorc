@@ -31,9 +31,6 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
-	"net/http"
-	"net"
-	"crypto/tls"
 )
 
 var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
