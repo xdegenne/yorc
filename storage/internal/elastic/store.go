@@ -97,15 +97,15 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
 	// get specific config from storage properties
-	storeProperties := storeConfig.properties.GetDuration("es_query_period")
+	storeProperties := storeConfig.Properties.GetDuration("es_query_period")
 	if (storeProperties.IsSet("es_query_period")) {
-		esTimeout = storeConfig.properties.GetDuration("es_query_period")
+		esTimeout = storeProperties.GetDuration("es_query_period")
 	}
 	if (storeProperties.IsSet("es_refresh_wait_timeout")) {
-		esRefreshTimeout = storeConfig.properties.GetDuration("es_refresh_wait_timeout")
+		esRefreshTimeout = storeProperties.GetDuration("es_refresh_wait_timeout")
 	}
 	if (storeProperties.IsSet("index_prefix")) {
-		indicePrefix = storeConfig.properties.GetString("index_prefix")
+		indicePrefix = storeProperties.GetString("index_prefix")
 	}
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esTimeout, esRefreshTimeout)
 	log.Printf("Index prefix will be %s", indicePrefix)
