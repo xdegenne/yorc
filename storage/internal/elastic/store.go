@@ -122,6 +122,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	}
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esTimeout, esRefreshTimeout)
 	log.Printf("Index prefix will be %s", indicePrefix)
+	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
 	esClient, _ := elasticsearch6.NewClient(esConfig)
 
