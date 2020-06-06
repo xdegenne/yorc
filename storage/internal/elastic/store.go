@@ -97,7 +97,7 @@ func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	esClient, _ := elasticsearch6.NewDefaultClient()
 	// get specific config from storage properties
-	storeProperties := storeConfig.Properties.GetDuration("es_query_period")
+	storeProperties := storeConfig.Properties
 	if (storeProperties.IsSet("es_query_period")) {
 		esTimeout = storeProperties.GetDuration("es_query_period")
 	}
