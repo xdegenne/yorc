@@ -351,7 +351,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 		}
 		log.Debugf("Document build from key %s added to bulk resquest body, indexName was %s", kv.Key, indexName)
-		body = append(body, data)
+		body = append(body, data...)
 	}
 
 	// Prepare ES bulk request
@@ -359,7 +359,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		Body: bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), c.esClient)
-	debugESResponse("BulkRequest:" + indicePrefix + indexName, res, err)
+	debugESResponse("BulkRequest", res, err)
 
 	defer res.Body.Close()
 
