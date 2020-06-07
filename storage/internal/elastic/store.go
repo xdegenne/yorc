@@ -338,14 +338,11 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return err
 		}
 
-		documentIndex := make(map[string]interface{}, 1)
-		// Specify the index name and type for the bulk request
-		document["_index"] = indexName
-		document["_type"] = "logs_or_event"
-		documentIndex["index"] = document
+		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }`
+		body = append(body, index...)
 
-		// Marshal the bulk request entry as byte array
-		data, err := s.codec.Marshal(documentIndex)
+		// Marshal the document as byte array
+		data, err := s.codec.Marshal(document)
 		if err != nil {
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 		}
