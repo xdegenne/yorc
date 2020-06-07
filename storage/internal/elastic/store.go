@@ -374,7 +374,16 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 	} else if res.IsError() {
 		return errors.Errorf("Error while sending bulk request, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
 	} else {
-		return nil
+		var rsp map[string]interface{}
+		json.NewDecoder(res.Body).Decode(&rsp)
+		if rsp["errors"].(bool) {
+			// The bulk request contains errors
+			return errors.Errorf("The bulk request succeded, but the response contains errors : %+v", rsp)
+
+		} else {
+			log.Debugf("Bulk request of length %d has been accepted without errors", len(body))
+			return nil
+		}
 	}
 
 }
