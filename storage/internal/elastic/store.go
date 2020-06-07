@@ -267,13 +267,22 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
 
-	document := v.(map[string]interface{})
+	// v is a json.RawMessage
+	data, err := c.codec.Marshal(v)
+	if err != nil {
+		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
+	}
+	var unmarchalledDocument interface{}
+	json.Unmarshal(data, &unmarchalledDocument)
+	document := unmarchalledDocument.(map[string]interface{})
+
+	// enrich the document by adding the clusterId
 	document["clusterId"] = c.clusterId
 
 	// Add the property a string representation of the iid to the document
 	document["iid"] = strconv.FormatInt(iid, 10)
 
-	data, err := c.codec.Marshal(document)
+	body, err := c.codec.Marshal(document)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
@@ -284,7 +293,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
 		DocumentType: "logs_or_event",
-		Body:       bytes.NewReader(data),
+		Body:       bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), c.esClient)
 	debugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
@@ -301,7 +310,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 }
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
-	
+
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
