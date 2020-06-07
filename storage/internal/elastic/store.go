@@ -338,8 +338,9 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return err
 		}
 
-		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }\n`
+		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }`
 		body = append(body, index...)
+		body = append(body, "\n"...)
 
 		// Marshal the document as byte array
 		data, err := s.codec.Marshal(document)
