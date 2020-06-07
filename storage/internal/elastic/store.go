@@ -338,7 +338,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return err
 		}
 
-		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }`
+		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }\n`
 		body = append(body, index...)
 
 		// Marshal the document as byte array
@@ -348,6 +348,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		}
 		log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
 		body = append(body, data...)
+		body = append(body, "\n"...)
 	}
 
 	// The bulk request must be terminated by a newline
