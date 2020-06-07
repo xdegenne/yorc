@@ -418,10 +418,9 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			}
 		}
 	}
-	log.Printf("%d documents have been successfully indexed using %d bulk requests", len(keyValues), iterationCount)
+	log.Printf("A total of %d documents have been successfully indexed using %d bulk requests", len(keyValues), iterationCount)
 
 	return nil
-
 }
 
 func (s *elasticStore) Get(k string, v interface{}) (bool, error) {
@@ -526,6 +525,7 @@ func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	var r lastIndexResponse
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		log.Printf("Error parsing the response body: %s", err)
+		return last_index, err
 	}
 
 	hits := r.hits.total
@@ -538,7 +538,7 @@ func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	}
 
 	// Print the response status, number of results, and request duration.
-	log.Printf(
+	log.Debugf(
 		"[%s] %d hits; last_index: %d",
 		res.Status(),
 		hits,
@@ -596,7 +596,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, esRefreshTimeout, GetIndexName(indexName), len(values))
 		}
 	}
-	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
+	log.Debugf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
 
@@ -790,7 +790,7 @@ func (s *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, s
 		}
 	}
 
-	log.Printf("DoQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
+	log.Debugf("DoQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
 }
 
