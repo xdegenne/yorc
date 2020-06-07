@@ -347,7 +347,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 	}
 
 	iterationCount := int(math.Ceil((float64(len(keyValues)) / float64(maxBulkSize))))
-	log.Printf("max_bulk_size is %d, so %d iterations will be necessary to bulk insert data of total length %d", maxBulkSize, iterationCount, len(keyValues))
+	log.Printf("max_bulk_size is %d, so %d iterations will be necessary to bulk insert data of total length %d", maxBulkSize, iterationCount + 1, len(keyValues))
 
 	var kvi int = 0
 	for i:=0; i<iterationCount; i++ {
@@ -382,6 +382,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
 			body = append(body, data...)
 			body = append(body, "\n"...)
+
 			kvi++;
 			bulkRequestSize++;
 		}
@@ -417,6 +418,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			}
 		}
 	}
+	log.Printf("%d documents have been successfully indexed using %d bulk requests", len(keyValues), iterationCount)
+
 	return nil
 
 }
