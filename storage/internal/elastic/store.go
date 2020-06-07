@@ -353,6 +353,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		body = append(body, data...)
 	}
 
+	// The bulk request must be terminated by a newline
 	body = append(body, "\n"...)
 	//if log.IsDebug() {
 	//	log.Debugf("About to send bulk request query to ES: %s", string(body))
