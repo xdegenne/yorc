@@ -49,36 +49,34 @@ type elasticStore struct {
 	clusterId string
 }
 
-type LastIndexResponse struct {
-	hits Hits 							`json:"hits"`
-	aggregations LogOrEventAggregation 	`json:"aggregations"`
+type lastIndexResponse struct {
+	hits         hits                  `json:"hits"`
+	aggregations logOrEventAggregation `json:"aggregations"`
 }
-type Hits struct {
+type hits struct {
 	total int 	`json:"total"`
 }
-type LogOrEventAggregation struct {
-	logs_or_events LastIndexAggregation 	`json:"logs_or_events"`
+type logOrEventAggregation struct {
+	logs_or_events lastIndexAggregation `json:"logs_or_events"`
 }
-type LastIndexAggregation struct {
-	doc_count  int 			`json:"doc_count"`
-	last_index StringValue 	`json:"last_index"`
+type lastIndexAggregation struct {
+	doc_count  int         `json:"doc_count"`
+	last_index stringValue `json:"last_index"`
 }
-type StringValue struct {
+type stringValue struct {
 	value string 	`json:"value"`
 }
 
-func (c *elasticStore) extractIndexNameAndTimestamp(k string) (string, string) {
-	var indexName, timetstamp string
+func (c *elasticStore) ExtractIndexNameAndTimestamp(k string) (indexName string, timestamp string) {
 	res := indexNameAndTimestampRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
-		timetstamp = res[i][2]
+		timestamp = res[i][2]
 	}
-	return indexName, timetstamp
+	return indexName, timestamp
 }
 
-func (c *elasticStore) extractIndexNameAndDeploymentId(k string) (string, string) {
-	var indexName, deploymentId string
+func (c *elasticStore) ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId string) {
 	res := indexNameAndDeploymentIdRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
@@ -252,7 +250,7 @@ func (c *elasticStore) getElasticDocument(k string, v interface{}) (string, map[
 	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
-	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
+	indexName, timestamp := c.ExtractIndexNameAndTimestamp(k)
 	log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
 
 	// Convert timestamp to an int64
@@ -419,7 +417,7 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	log.Debugf("Delete called k: %s, recursive: %t", k, recursive)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
@@ -443,7 +441,7 @@ func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Debugf("GetLastModifyIndex called k: %s", k)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	return c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
@@ -490,7 +488,7 @@ func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 		}
 	}
 
-	var r LastIndexResponse
+	var r lastIndexResponse
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		log.Printf("Error parsing the response body: %s", err)
 	}
@@ -522,7 +520,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 
 	// Extract indice name by parsing the key
-	indexName, deploymentId := c.extractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId", indexName, deploymentId)
 
 	query := getListQuery(c.clusterId, deploymentId, waitIndex, 0)
@@ -544,7 +542,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		if hits > 0 || now.After(end) {
 			break
 		}
-		log.Debugf("Hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
+		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
 		time.Sleep(esTimeout)
 	}
 	if (hits > 0) {
