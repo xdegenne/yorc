@@ -255,19 +255,6 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
-	data, err := c.codec.Marshal(v)
-	if err != nil {
-		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
-	}
-
-	//log.Debugf("About to Set data into ES, data (%T): %s", data, data)
-
-	// enrich the data by adding the clusterId
-	var v2 interface{}
-	json.Unmarshal(data, &v2)
-	enrichedData := v2.(map[string]interface{})
-	enrichedData["clusterId"] = c.clusterId
-
 	// Extract indice name and timestamp by parsing the key
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
 	log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
@@ -279,20 +266,25 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
-	// Add the property iid to the document
-	//enrichedData["iid"] = iid
-	// We also add it's string representation to avoid decoding issue
-	enrichedData["iid"] = strconv.FormatInt(iid, 10)
 
-	var jsonData []byte
-	jsonData, err = json.Marshal(enrichedData)
+	document := v.(map[string]interface{})
+	document["clusterId"] = c.clusterId
 
-	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, jsonData, string(jsonData))
+	// Add the property a string representation of the iid to the document
+	document["iid"] = strconv.FormatInt(iid, 10)
+
+	data, err := c.codec.Marshal(document)
+	if err != nil {
+		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
+	}
+
+	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, data, string(data))
+
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:      indicePrefix + indexName,
 		DocumentType: "logs_or_event",
-		Body:       bytes.NewReader(jsonData),
+		Body:       bytes.NewReader(data),
 	}
 	res, err := req.Do(context.Background(), c.esClient)
 	debugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
@@ -309,6 +301,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 }
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
+	
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
