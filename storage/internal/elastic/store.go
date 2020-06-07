@@ -340,12 +340,12 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		}
 
 		documentIndex := make(map[string]interface{}, 1)
-		// specify the index name and type for the bulk request
+		// Specify the index name and type for the bulk request
 		document["_index"] = indexName
 		document["_type"] = "logs_or_event"
 		documentIndex["index"] = document
 
-		// marshall the bulk request entry as byte array
+		// Marshal the bulk request entry as byte array
 		data, err := c.codec.Marshal(documentIndex)
 		if err != nil {
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
@@ -384,13 +384,8 @@ func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return false, err
 	}
-
-	found, value, err := consulutil.GetValue(k)
-	if err != nil || !found {
-		return found, err
-	}
-
-	return true, errors.Wrapf(c.codec.Unmarshal(value, v), "failed to unmarshal data:%q", string(value))
+	log.Fatalf("Function Get(string, interface{}) not yet implemented for Elastic store !")
+	return false, errors.Errorf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 }
 
 func (c *elasticStore) Exist(k string) (bool, error) {
@@ -405,11 +400,8 @@ func (c *elasticStore) Exist(k string) (bool, error) {
 		return false, err
 	}
 
-	found, _, err := consulutil.GetValue(k)
-	if err != nil {
-		return false, err
-	}
-	return found, nil
+	log.Fatalf("Function Exist(string) not yet implemented for Elastic store !")
+	return false, errors.Errorf("Function Exist(string) not yet implemented for Elastic store !")
 }
 
 func (c *elasticStore) Keys(k string) ([]string, error) {
@@ -420,7 +412,8 @@ func (c *elasticStore) Keys(k string) ([]string, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
-	return consulutil.GetKeys(k)
+	log.Fatalf("Function Keys(string) not yet implemented for Elastic store !")
+	return nil, errors.Errorf("Function Keys(string) not yet implemented for Elastic store !")
 }
 
 func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) error {
