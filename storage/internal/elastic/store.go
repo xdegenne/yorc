@@ -322,8 +322,8 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 }
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
-
 	log.Printf("SetCollection called with an array of size %d", len(keyValues))
+
 	if keyValues == nil || len(keyValues) == 0 {
 		return nil
 	}
@@ -346,11 +346,11 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		documentIndex["index"] = document
 
 		// marshall the bulk request entry as byte array
-		data, err := c.codec.Marshal(document)
+		data, err := c.codec.Marshal(documentIndex)
 		if err != nil {
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 		}
-		log.Debugf("Document build from key %s added to bulk resquest body, indexName was %s", kv.Key, indexName)
+		log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
 		body = append(body, data...)
 	}
 
