@@ -302,12 +302,12 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      indicePrefix + indexName,
+		Index:      GetIndexName(indexName),
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
+	DebugESResponse("IndexRequest:" + GetIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 
@@ -318,6 +318,10 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	} else {
 		return nil
 	}
+}
+
+func GetIndexName(storeType string) string {
+	return indicePrefix + storeType
 }
 
 func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
@@ -338,7 +342,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return err
 		}
 
-		index := `{ "index" : { "_index" : "` + indexName + `", "_type" : "logs_or_event" } }`
+		index := `{ "index" : { "_index" : "` + GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
 		body = append(body, index...)
 		body = append(body, "\n"...)
 
@@ -443,12 +447,12 @@ func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	var MaxInt = 1024000
 
 	req := esapi.DeleteByQueryRequest{
-		Index: []string{indicePrefix + indexName},
+		Index: []string{GetIndexName(indexName)},
 		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("DeleteByQueryRequest:" + indicePrefix + indexName, res, err)
+	DebugESResponse("DeleteByQueryRequest:" + GetIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 	return err
@@ -461,7 +465,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
-	return s.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
+	return s.InternalGetLastModifyIndex(GetIndexName(indexName), deploymentId)
 
 }
 
@@ -551,7 +555,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = s.DoQueryEs(indicePrefix + indexName, query, waitIndex, 1, "desc");
+		hits, values, lastIndex, err = s.DoQueryEs(GetIndexName(indexName), query, waitIndex, 1, "desc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -567,15 +571,15 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
 		query := GetListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
 		// force refresh for this index
-		RefreshIndex(s.esClient, indicePrefix + indexName);
+		RefreshIndex(s.esClient, GetIndexName(indexName));
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = s.DoQueryEs(indicePrefix + indexName, query, waitIndex, 10000, "asc");
+		hits, values, lastIndex, err = s.DoQueryEs(GetIndexName(indexName), query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if hits > oldHits {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, esRefreshTimeout, indicePrefix + indexName, len(values))
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, esRefreshTimeout, GetIndexName(indexName), len(values))
 		}
 	}
 	log.Printf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
