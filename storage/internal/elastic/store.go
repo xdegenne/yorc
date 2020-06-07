@@ -248,12 +248,9 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
 
-func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
 
-	if err := utils.CheckKeyAndValue(k, v); err != nil {
-		return err
-	}
+func (c *elasticStore) getElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
+	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
 	indexName, timestamp := c.extractIndexNameAndTimestamp(k)
@@ -262,7 +259,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Convert timestamp to an int64
 	eventDate, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
-		return errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
+		return indexName, document, errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
 	}
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
@@ -270,24 +267,39 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// v is a json.RawMessage
 	data, err := c.codec.Marshal(v)
 	if err != nil {
-		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
+		return indexName, document, errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
 	var unmarchalledDocument interface{}
 	json.Unmarshal(data, &unmarchalledDocument)
-	document := unmarchalledDocument.(map[string]interface{})
+	document = unmarchalledDocument.(map[string]interface{})
 
 	// enrich the document by adding the clusterId
 	document["clusterId"] = c.clusterId
 
-	// Add the property a string representation of the iid to the document
+	// Add a sortable string representation of the iid to the document
+	// TODO ?? ensure we have 19 cars ?
 	document["iid"] = strconv.FormatInt(iid, 10)
 
+	return indexName, document, nil
+}
+
+func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
+	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
+
+	if err := utils.CheckKeyAndValue(k, v); err != nil {
+		return err
+	}
+
+	indexName, document, err := c.getElasticDocument(k, v)
+	if err != nil {
+		return err
+	}
 	body, err := c.codec.Marshal(document)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
 
-	log.Debugf("After enrichment, about to Set data into ES, k: %s, v (%T) : %+v", k, data, string(data))
+	log.Debugf("About to index this document into ES, k: %s, v (%T) : %+v", k, body, string(body))
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
