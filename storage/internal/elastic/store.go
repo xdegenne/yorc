@@ -17,7 +17,6 @@ package elastic
 import (
 	"context"
 	"github.com/pkg/errors"
-	"github.com/ystia/yorc/v4/helper/consulutil"
 	"github.com/ystia/yorc/v4/storage/encoding"
 	"github.com/ystia/yorc/v4/storage/store"
 	"github.com/ystia/yorc/v4/storage/utils"
