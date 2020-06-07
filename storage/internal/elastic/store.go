@@ -230,7 +230,7 @@ func DebugESResponse(msg string, res *esapi.Response, err error) {
 	} else {
 		var rsp map[string]interface{}
 		json.NewDecoder(res.Body).Decode(&rsp)
-		log.Debugf("[%s] Success ES request (%d): %+v", msg, res.StatusCode, rsp)
+		log.Debugf("[%s] Success ES response (%d): %+v", msg, res.StatusCode, rsp)
 	}
 }
 
@@ -365,7 +365,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 	}
 	res, err := req.Do(context.Background(), s.esClient)
 	log.Debugf("Sent bulk request query of %d bytes to ES: ", len(body))
-	DebugESResponse("BulkRequest", res, err)
+	//DebugESResponse("BulkRequest", res, err)
 
 	defer res.Body.Close()
 
@@ -378,8 +378,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		json.NewDecoder(res.Body).Decode(&rsp)
 		if rsp["errors"].(bool) {
 			// The bulk request contains errors
-			return errors.Errorf("The bulk request succeded, but the response contains errors : %+v", rsp)
-
+			return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
 		} else {
 			log.Debugf("Bulk request of length %d has been accepted without errors", len(body))
 			return nil
