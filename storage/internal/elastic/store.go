@@ -95,7 +95,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
 	// Just fail if this storage is used for anything different from log or events
 	for _, t := range storeConfig.Types {
-		if t != "Log" || t != "Event" {
+		if t != "Log" && t != "Event" {
 			log.Fatalf("Elastic store is not able to manage <%s>, just Log or Event, please change your config", t)
 		}
 	}
