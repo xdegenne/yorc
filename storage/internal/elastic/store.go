@@ -294,12 +294,12 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return err
 	}
+	log.Debugf("About to index this document into ES index %s : %+v", indexName, document)
+
 	body, err := c.codec.Marshal(document)
 	if err != nil {
-		return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
+		return errors.Wrapf(err, "Failed to marshal document %+v due to error: %+v", document, err)
 	}
-
-	log.Debugf("About to index this document into ES, k: %s, v (%T) : %+v", k, body, string(body))
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
@@ -323,32 +323,54 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
 
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Printf("SetCollection called")
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
+	log.Printf("SetCollection called with an array of size %d", len(keyValues))
 	if keyValues == nil || len(keyValues) == 0 {
 		return nil
 	}
-	ctx, errGroup, consulStore := consulutil.WithContext(ctx)
+
+	body := make([]byte, 0)
 	for _, kv := range keyValues {
 		if err := utils.CheckKeyAndValue(kv.Key, kv.Value); err != nil {
 			return err
 		}
-		log.Printf("About to Set data into ES, k: %s", kv.Key)
 
-		data, err := c.codec.Marshal(kv.Value)
+		indexName, document, err := c.getElasticDocument(kv.Key, kv.Value)
+		if err != nil {
+			return err
+		}
+
+		documentIndex := make(map[string]interface{}, 1)
+		// specify the index name and type for the bulk request
+		document["_index"] = indexName
+		document["_type"] = "logs_or_event"
+		documentIndex["index"] = document
+
+		// marshall the bulk request entry as byte array
+		data, err := c.codec.Marshal(document)
 		if err != nil {
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 		}
-		log.Printf("About to Set data into ES, data: %s", data)
-
-		consulStore.StoreConsulKey(kv.Key, data)
+		log.Debugf("Document build from key %s added to bulk resquest body, indexName was %s", kv.Key, indexName)
+		body = append(body, data)
 	}
-	return errGroup.Wait()
+
+	// Prepare ES bulk request
+	req := esapi.BulkRequest{
+		Body: bytes.NewReader(body),
+	}
+	res, err := req.Do(context.Background(), c.esClient)
+	debugESResponse("BulkRequest:" + indicePrefix + indexName, res, err)
+
+	defer res.Body.Close()
+
+	if err != nil {
+		return err
+	} else if res.IsError() {
+		return errors.Errorf("Error while sending bulk request, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
+	} else {
+		return nil
+	}
+
 }
 
 func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
