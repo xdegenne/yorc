@@ -548,7 +548,7 @@ func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	var r lastIndexResponse
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		log.Printf("Error parsing the response body: %s", err)
-		return last_index, err
+		return 0, err
 	}
 
 	hits := r.hits.total
