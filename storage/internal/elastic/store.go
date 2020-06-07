@@ -93,9 +93,18 @@ func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId s
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
-	// get specific config from storage properties
+	// Just fail if this storage is used for anything different from log or events
+	for _, t := range storeConfig.Types {
+		if t != "Log" || t != "Event" {
+			log.Fatalf("Elastic store is not able to manage <%s>, just Log or Event, please change your config", t)
+		}
+	}
+
+	// Get specific config from storage properties
 	storeProperties := storeConfig.Properties
 	var esConfig elasticsearch6.Config
+
+	// The ES urls is required
 	if (storeProperties.IsSet("es_urls")) {
 		es_urls := storeProperties.GetStringSlice("es_urls")
 		if (es_urls == nil || len(es_urls) == 0) {
@@ -125,8 +134,6 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
 	log.Printf("Here is the ES cluster info")
 	log.Println(esClient.Info());
-	//log.Printf("ServerID: %s", cfg.ServerID)
-	//var clusterId string = cfg.ServerID
 	log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
 	var clusterId string = cfg.ClusterID
 	if len(clusterId) == 0 {
@@ -384,7 +391,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			// The bulk request contains errors
 			return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
 		} else {
-			log.Debugf("Bulk request of length %d has been accepted without errors", len(body))
+			log.Debugf("Bulk request of %d bytes has been accepted without errors", len(body))
 			return nil
 		}
 	}
@@ -402,7 +409,7 @@ func (s *elasticStore) Get(k string, v interface{}) (bool, error) {
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return false, err
 	}
-	//log.Fatalf("Function Get(string, interface{}) not yet implemented for Elastic store !")
+	log.Fatalf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 	return false, errors.Errorf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 }
 
@@ -418,7 +425,7 @@ func (s *elasticStore) Exist(k string) (bool, error) {
 		return false, err
 	}
 
-	//log.Fatalf("Function Exist(string) not yet implemented for Elastic store !")
+	log.Fatalf("Function Exist(string) not yet implemented for Elastic store !")
 	return false, errors.Errorf("Function Exist(string) not yet implemented for Elastic store !")
 }
 
@@ -430,7 +437,7 @@ func (s *elasticStore) Keys(k string) ([]string, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
-	//log.Fatalf("Function Keys(string) not yet implemented for Elastic store !")
+	log.Fatalf("Function Keys(string) not yet implemented for Elastic store !")
 	return nil, errors.Errorf("Function Keys(string) not yet implemented for Elastic store !")
 }
 
