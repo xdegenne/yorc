@@ -30,6 +30,8 @@ import (
 	"github.com/ystia/yorc/v4/config"
 	"strings"
 	"strconv"
+	"math"
+	"fmt"
 )
 
 var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -38,9 +40,11 @@ var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)
 // All index used by yorc will be prefixed by this prefix
 var indicePrefix = "yorc_"
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-var esTimeout = 5 * time.Second
+var esQueryPeriod = 5 * time.Second
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
 var esRefreshTimeout = (5 * time.Second)
+// This is the maximum size of bulk request sent while migrating data
+var maxBulkSize = 1000
 var pfalse = false
 
 type elasticStore struct {
@@ -93,7 +97,7 @@ func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId s
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
-	// Just fail if this storage is used for anything different from log or events
+	// Just fail if this storage is used for anything different from logs or events
 	for _, t := range storeConfig.Types {
 		if t != "Log" && t != "Event" {
 			log.Fatalf("Elastic store is not able to manage <%s>, just Log or Event, please change your config", t)
@@ -118,7 +122,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	}
 
 	if (storeProperties.IsSet("es_query_period")) {
-		esTimeout = storeProperties.GetDuration("es_query_period")
+		esQueryPeriod = storeProperties.GetDuration("es_query_period")
 	}
 	if (storeProperties.IsSet("es_refresh_wait_timeout")) {
 		esRefreshTimeout = storeProperties.GetDuration("es_refresh_wait_timeout")
@@ -126,7 +130,11 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	if (storeProperties.IsSet("index_prefix")) {
 		indicePrefix = storeProperties.GetString("index_prefix")
 	}
-	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esTimeout, esRefreshTimeout)
+	if (storeProperties.IsSet("max_bulk_size")) {
+		maxBulkSize = storeProperties.GetInt("max_bulk_size")
+	}
+	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esQueryPeriod, esRefreshTimeout)
+	log.Printf("While migrating data, the max bulk request size will be %d", maxBulkSize)
 	log.Printf("Index prefix will be %s", indicePrefix)
 	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
@@ -338,105 +346,101 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		return nil
 	}
 
-	body := make([]byte, 0)
-	for _, kv := range keyValues {
-		if err := utils.CheckKeyAndValue(kv.Key, kv.Value); err != nil {
-			return err
+	iterationCount := int(math.Ceil((float64(len(keyValues)) / float64(maxBulkSize))))
+	log.Printf("max_bulk_size is %d, so %d iterations will be necessary to bulk insert data of total length %d", maxBulkSize, iterationCount, len(keyValues))
+
+	var kvi int = 0
+	for i:=0; i<iterationCount; i++ {
+		fmt.Printf("Bulk iteration #%d", i)
+
+		body := make([]byte, 0)
+		bulkRequestSize := 0
+		for {
+			if kvi == len(keyValues)|| bulkRequestSize == maxBulkSize {
+				break
+			}
+
+			kv := keyValues[kvi]
+			if err := utils.CheckKeyAndValue(kv.Key, kv.Value); err != nil {
+				return err
+			}
+
+			indexName, document, err := s.BuildElasticDocument(kv.Key, kv.Value)
+			if err != nil {
+				return err
+			}
+
+			index := `{ "index" : { "_index" : "` + GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
+			body = append(body, index...)
+			body = append(body, "\n"...)
+
+			// Marshal the document as byte array
+			data, err := s.codec.Marshal(document)
+			if err != nil {
+				return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
+			}
+			log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
+			body = append(body, data...)
+			body = append(body, "\n"...)
+			kvi++;
+			bulkRequestSize++;
 		}
 
-		indexName, document, err := s.BuildElasticDocument(kv.Key, kv.Value)
+		// The bulk request must be terminated by a newline
+		body = append(body, "\n"...)
+		log.Printf("About to bulk request index using %d documents (%d bytes)", bulkRequestSize, len(body))
+		if log.IsDebug() {
+			log.Debugf("About to send bulk request query to ES: %s", string(body))
+		}
+
+		// Prepare ES bulk request
+		req := esapi.BulkRequest{
+			Body: bytes.NewReader(body),
+		}
+		res, err := req.Do(context.Background(), s.esClient)
+		//DebugESResponse("BulkRequest", res, err)
+
+		defer res.Body.Close()
+
 		if err != nil {
 			return err
-		}
-
-		index := `{ "index" : { "_index" : "` + GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
-		body = append(body, index...)
-		body = append(body, "\n"...)
-
-		// Marshal the document as byte array
-		data, err := s.codec.Marshal(document)
-		if err != nil {
-			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
-		}
-		log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
-		body = append(body, data...)
-		body = append(body, "\n"...)
-	}
-
-	// The bulk request must be terminated by a newline
-	body = append(body, "\n"...)
-	log.Debugf("About to send bulk request query of %d bytes to ES: ", len(body))
-	if log.IsDebug() {
-		log.Debugf("About to send bulk request query to ES: %s", string(body))
-	}
-
-	// Prepare ES bulk request
-	req := esapi.BulkRequest{
-		Body: bytes.NewReader(body),
-	}
-	res, err := req.Do(context.Background(), s.esClient)
-	log.Debugf("Sent bulk request query of %d bytes to ES: ", len(body))
-	//DebugESResponse("BulkRequest", res, err)
-
-	defer res.Body.Close()
-
-	if err != nil {
-		return err
-	} else if res.IsError() {
-		return errors.Errorf("Error while sending bulk request, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
-	} else {
-		var rsp map[string]interface{}
-		json.NewDecoder(res.Body).Decode(&rsp)
-		if rsp["errors"].(bool) {
-			// The bulk request contains errors
-			return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
+		} else if res.IsError() {
+			return errors.Errorf("Error while sending bulk request, response code was <%d> and response message was <%s>", res.StatusCode, res.String())
 		} else {
-			log.Debugf("Bulk request of %d bytes has been accepted without errors", len(body))
-			return nil
+			var rsp map[string]interface{}
+			json.NewDecoder(res.Body).Decode(&rsp)
+			if rsp["errors"].(bool) {
+				// The bulk request contains errors
+				return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
+			} else {
+				log.Printf("Bulk request containing %d documents (%d bytes) has been accepted without errors", bulkRequestSize, len(body))
+			}
 		}
 	}
+	return nil
 
 }
 
 func (s *elasticStore) Get(k string, v interface{}) (bool, error) {
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Printf("Get called, k: %s, v (%T) : %+v", k, v, v)
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return false, err
 	}
+	// This function is not used for logs nor events
 	log.Fatalf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 	return false, errors.Errorf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 }
 
 func (s *elasticStore) Exist(k string) (bool, error) {
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Printf("Exist called k: %s", k)
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
 	if err := utils.CheckKey(k); err != nil {
 		return false, err
 	}
-
+	// This function is not used for logs nor events
 	log.Fatalf("Function Exist(string) not yet implemented for Elastic store !")
 	return false, errors.Errorf("Function Exist(string) not yet implemented for Elastic store !")
 }
 
 func (s *elasticStore) Keys(k string) ([]string, error) {
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Printf("Keys called k: %s", k)
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
-	log.Println(strings.Repeat("=", 37))
+	// This function is not used for logs nor events
 	log.Fatalf("Function Keys(string) not yet implemented for Elastic store !")
 	return nil, errors.Errorf("Function Keys(string) not yet implemented for Elastic store !")
 }
@@ -570,8 +574,8 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		if hits > 0 || now.After(end) {
 			break
 		}
-		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, esTimeout)
-		time.Sleep(esTimeout)
+		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, esQueryPeriod)
+		time.Sleep(esQueryPeriod)
 	}
 	if (hits > 0) {
 		// we do have something to retrieve, we will just wait esRefreshTimeout to let any document that has just been stored to be indexed
