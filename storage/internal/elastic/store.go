@@ -447,7 +447,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Debugf("GetLastModifyIndex called k: %s", k)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := s.ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	return s.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
@@ -526,7 +526,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 
 	// Extract indice name by parsing the key
-	indexName, deploymentId := s.ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId", indexName, deploymentId)
 
 	query := GetListQuery(s.clusterId, deploymentId, waitIndex, 0)
