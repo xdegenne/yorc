@@ -67,7 +67,7 @@ type stringValue struct {
 	value string 	`json:"value"`
 }
 
-func (c *elasticStore) ExtractIndexNameAndTimestamp(k string) (indexName string, timestamp string) {
+func ExtractIndexNameAndTimestamp(k string) (indexName string, timestamp string) {
 	res := indexNameAndTimestampRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
@@ -76,7 +76,7 @@ func (c *elasticStore) ExtractIndexNameAndTimestamp(k string) (indexName string,
 	return indexName, timestamp
 }
 
-func (c *elasticStore) ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId string) {
+func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId string) {
 	res := indexNameAndDeploymentIdRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
@@ -246,11 +246,11 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 }
 
 
-func (c *elasticStore) BuildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
+func (s *elasticStore) BuildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
 	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
-	indexName, timestamp := c.ExtractIndexNameAndTimestamp(k)
+	indexName, timestamp := ExtractIndexNameAndTimestamp(k)
 	log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
 
 	// Convert timestamp to an int64
@@ -262,16 +262,16 @@ func (c *elasticStore) BuildElasticDocument(k string, v interface{}) (string, ma
 	iid := eventDate.UnixNano()
 
 	// v is a json.RawMessage
-	data, err := c.codec.Marshal(v)
+	data, err := s.codec.Marshal(v)
 	if err != nil {
 		return indexName, document, errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
-	var unmarchalledDocument interface{}
-	json.Unmarshal(data, &unmarchalledDocument)
-	document = unmarchalledDocument.(map[string]interface{})
+	var unmarshaledDocument interface{}
+	json.Unmarshal(data, &unmarshaledDocument)
+	document = unmarshaledDocument.(map[string]interface{})
 
 	// enrich the document by adding the clusterId
-	document["clusterId"] = c.clusterId
+	document["clusterId"] = s.clusterId
 
 	// Add a sortable string representation of the iid to the document
 	// TODO ?? ensure we have 19 cars ?
@@ -280,24 +280,24 @@ func (c *elasticStore) BuildElasticDocument(k string, v interface{}) (string, ma
 	return indexName, document, nil
 }
 
-func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
-	log.Debugf("About to Set data into ES, k: %s, v (%T) : %+v", k, v, v)
+func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
+	log.Debugf("Set called will key %s", k)
 
 	if err := utils.CheckKeyAndValue(k, v); err != nil {
 		return err
 	}
 
-	indexName, document, err := c.BuildElasticDocument(k, v)
+	indexName, document, err := s.BuildElasticDocument(k, v)
 	if err != nil {
 		return err
 	}
 
-	body, err := c.codec.Marshal(document)
+	body, err := s.codec.Marshal(document)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to marshal document %+v due to error: %+v", document, err)
 	}
 	if log.IsDebug() {
-		log.Debugf("About to index this document into ES index %s : %+v", indexName, string(body))
+		log.Debugf("About to index this document into ES index <%s> : %+v", indexName, string(body))
 	}
 
 	// Prepare ES request
@@ -306,7 +306,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(body),
 	}
-	res, err := req.Do(context.Background(), c.esClient)
+	res, err := req.Do(context.Background(), s.esClient)
 	DebugESResponse("IndexRequest:" + indicePrefix + indexName, res, err)
 
 	defer res.Body.Close()
@@ -320,7 +320,7 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 }
 
-func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
+func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
 	log.Printf("SetCollection called with an array of size %d", len(keyValues))
 
 	if keyValues == nil || len(keyValues) == 0 {
@@ -333,7 +333,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			return err
 		}
 
-		indexName, document, err := c.BuildElasticDocument(kv.Key, kv.Value)
+		indexName, document, err := s.BuildElasticDocument(kv.Key, kv.Value)
 		if err != nil {
 			return err
 		}
@@ -345,7 +345,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		documentIndex["index"] = document
 
 		// Marshal the bulk request entry as byte array
-		data, err := c.codec.Marshal(documentIndex)
+		data, err := s.codec.Marshal(documentIndex)
 		if err != nil {
 			return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 		}
@@ -353,11 +353,15 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		body = append(body, data...)
 	}
 
+	if log.IsDebug() {
+		log.Debugf("About to send bulk request query to ES: %s", string(body))
+	}
+
 	// Prepare ES bulk request
 	req := esapi.BulkRequest{
 		Body: bytes.NewReader(body),
 	}
-	res, err := req.Do(context.Background(), c.esClient)
+	res, err := req.Do(context.Background(), s.esClient)
 	DebugESResponse("BulkRequest", res, err)
 
 	defer res.Body.Close()
@@ -372,7 +376,7 @@ func (c *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 
 }
 
-func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
+func (s *elasticStore) Get(k string, v interface{}) (bool, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
@@ -387,7 +391,7 @@ func (c *elasticStore) Get(k string, v interface{}) (bool, error) {
 	return false, errors.Errorf("Function Get(string, interface{}) not yet implemented for Elastic store !")
 }
 
-func (c *elasticStore) Exist(k string) (bool, error) {
+func (s *elasticStore) Exist(k string) (bool, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
@@ -403,7 +407,7 @@ func (c *elasticStore) Exist(k string) (bool, error) {
 	return false, errors.Errorf("Function Exist(string) not yet implemented for Elastic store !")
 }
 
-func (c *elasticStore) Keys(k string) ([]string, error) {
+func (s *elasticStore) Keys(k string) ([]string, error) {
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
 	log.Println(strings.Repeat("=", 37))
@@ -415,14 +419,14 @@ func (c *elasticStore) Keys(k string) ([]string, error) {
 	return nil, errors.Errorf("Function Keys(string) not yet implemented for Elastic store !")
 }
 
-func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) error {
+func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) error {
 	log.Debugf("Delete called k: %s, recursive: %t", k, recursive)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
-	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + c.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
+	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + s.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
 	log.Debugf("query is : %s", query)
 
 	var MaxInt = 1024000
@@ -432,21 +436,21 @@ func (c *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
-	res, err := req.Do(context.Background(), c.esClient)
+	res, err := req.Do(context.Background(), s.esClient)
 	DebugESResponse("DeleteByQueryRequest:" + indicePrefix + indexName, res, err)
 
 	defer res.Body.Close()
 	return err
 }
 
-func (c *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
+func (s *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Debugf("GetLastModifyIndex called k: %s", k)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := s.ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
-	return c.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
+	return s.InternalGetLastModifyIndex(indicePrefix + indexName, deploymentId)
 
 }
 
@@ -459,17 +463,17 @@ func ParseInt64StringToUint64(value string) (uint64, error) {
 	return result, nil
 }
 
-func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
+func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
 
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
-	query := GetLastModifiedIndexQuery(c.clusterId, deploymentId)
+	query := GetLastModifiedIndexQuery(s.clusterId, deploymentId)
 	log.Debugf("GetLastModifiedIndexQuery is : %s", query)
 
-	res, err := c.esClient.Search(
-		c.esClient.Search.WithContext(context.Background()),
-		c.esClient.Search.WithIndex(indexName),
-		c.esClient.Search.WithSize(0),
-		c.esClient.Search.WithBody(strings.NewReader(query)),
+	res, err := s.esClient.Search(
+		s.esClient.Search.WithContext(context.Background()),
+		s.esClient.Search.WithIndex(indexName),
+		s.esClient.Search.WithSize(0),
+		s.esClient.Search.WithBody(strings.NewReader(query)),
 	)
 	if err != nil {
 		log.Printf("ERROR: %s", err)
@@ -515,17 +519,17 @@ func (c *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	return last_index, nil
 }
 
-func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
+func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, timeout time.Duration) ([]store.KeyValueOut, uint64, error) {
 	log.Debugf("List called k: %s, waitIndex: %d, timeout: %v" , k, waitIndex, timeout)
 	if err := utils.CheckKey(k); err != nil {
 		return nil, 0, err
 	}
 
 	// Extract indice name by parsing the key
-	indexName, deploymentId := c.ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := s.ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId", indexName, deploymentId)
 
-	query := GetListQuery(c.clusterId, deploymentId, waitIndex, 0)
+	query := GetListQuery(s.clusterId, deploymentId, waitIndex, 0)
 
 	now := time.Now()
 	end := now.Add(timeout - esRefreshTimeout)
@@ -536,7 +540,7 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = c.DoQueryEs(indicePrefix + indexName, query, waitIndex, 1, "desc");
+		hits, values, lastIndex, err = s.DoQueryEs(indicePrefix + indexName, query, waitIndex, 1, "desc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -550,12 +554,12 @@ func (c *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	if (hits > 0) {
 		// we do have something to retrieve, we will just wait esRefreshTimeout to let any document that has just been stored to be indexed
 		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
-		query := GetListQuery(c.clusterId, deploymentId, waitIndex, lastIndex)
+		query := GetListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
 		// force refresh for this index
-		RefreshIndex(c.esClient, indicePrefix + indexName);
+		RefreshIndex(s.esClient, indicePrefix + indexName);
 		time.Sleep(esRefreshTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = c.DoQueryEs(indicePrefix + indexName, query, waitIndex, 10000, "asc");
+		hits, values, lastIndex, err = s.DoQueryEs(indicePrefix + indexName, query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
@@ -679,17 +683,17 @@ func GetListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
 	return query
 }
 
-func (c *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, size int, order string) (int, []store.KeyValueOut, uint64, error) {
+func (s *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, size int, order string) (int, []store.KeyValueOut, uint64, error) {
 	log.Debugf("Search ES %s using query: %s", index, query)
 
 	values := make([]store.KeyValueOut, 0)
 
-	res, err := c.esClient.Search(
-		c.esClient.Search.WithContext(context.Background()),
-		c.esClient.Search.WithIndex(index),
-		c.esClient.Search.WithSize(size),
-		c.esClient.Search.WithBody(strings.NewReader(query)),
-		c.esClient.Search.WithSort("iid:" + order),
+	res, err := s.esClient.Search(
+		s.esClient.Search.WithContext(context.Background()),
+		s.esClient.Search.WithIndex(index),
+		s.esClient.Search.WithSize(size),
+		s.esClient.Search.WithBody(strings.NewReader(query)),
+		s.esClient.Search.WithSort("iid:" + order),
 	)
 	if err != nil {
 		log.Println(strings.Repeat("§", 37))
