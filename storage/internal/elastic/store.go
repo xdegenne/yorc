@@ -353,15 +353,17 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		body = append(body, data...)
 	}
 
-	if log.IsDebug() {
-		log.Debugf("About to send bulk request query to ES: %s", string(body))
-	}
+	//if log.IsDebug() {
+	//	log.Debugf("About to send bulk request query to ES: %s", string(body))
+	//}
+	log.Debugf("About to send bulk request query of %d bytes to ES: ", len(body))
 
 	// Prepare ES bulk request
 	req := esapi.BulkRequest{
 		Body: bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
+	log.Debugf("Sent bulk request query of %d bytes to ES: ", len(body))
 	DebugESResponse("BulkRequest", res, err)
 
 	defer res.Body.Close()
