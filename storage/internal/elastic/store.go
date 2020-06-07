@@ -296,7 +296,9 @@ func (c *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "Failed to marshal document %+v due to error: %+v", document, err)
 	}
-	log.Debugf("About to index this document into ES index %s : %+v", indexName, string(body))
+	if log.IsDebug() {
+		log.Debugf("About to index this document into ES index %s : %+v", indexName, string(body))
+	}
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
