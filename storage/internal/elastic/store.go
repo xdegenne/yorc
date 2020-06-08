@@ -465,8 +465,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		fmt.Printf("Bulk iteration %d", i)
 
 		maxBulkSizeInBytes := s.cfg.maxBulkSize * 1024
-		//body := make([]byte, 0, maxBulkSizeInBytes)
-		var body []byte
+		body := make([]byte, 0)
 		bulkActionCount := 0
 		for {
 			if kvi == totalDocumentCount || bulkActionCount == s.cfg.maxBulkCount {
