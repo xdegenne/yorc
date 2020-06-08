@@ -403,10 +403,10 @@ func appendJsonInBytes(a []byte, v []byte) []byte {
 	// just append v at the end
 	a = append(a, v...)
 	// then slice
-	a[last + len(v)] = lastByte
 	for i, s := range v {
 		a[last + i] = s
 	}
+	a[last + len(v)] = lastByte
 	return a
 }
 
