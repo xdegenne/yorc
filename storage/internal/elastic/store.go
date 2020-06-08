@@ -33,32 +33,23 @@ import (
 	"math"
 	"fmt"
 	"reflect"
+	"github.com/spf13/cast"
 )
 
-type ElasticStoreConf struct {
+type elasticStoreConf struct {
 	// The ES cluster urls (array or CSV)
 	esUrls []string 				`json:"es_urls"`
 	// All index used by yorc will be prefixed by this prefix
-	indicePrefix string 			`json:"index_prefix"`
+	indicePrefix string 				`json:"index_prefix" 				default:"yorc_"`
 	// When querying logs and event, we wait this timeout before each request when it returns nothing
 	// (until something is returned or the waitTimeout is reached)
-	esQueryPeriod time.Duration 	`json:"es_query_period"`
+	esQueryPeriod time.Duration 		`json:"es_query_period" 			default:"5s"`
 	// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-	esRefreshTimeout time.Duration 	`json:"es_refresh_wait_timeout"`
+	esRefreshWaitTimeout time.Duration `json:"es_refresh_wait_timeout" 		default:"5s"`
 	// This is the maximum size (in kB) of bulk request sent while migrating data
-	maxBulkSize int 				`json:"max_bulk_size"`
+	maxBulkSize int 					`json:"max_bulk_size" 				default:"4000"`
 	// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
-	maxBulkCount int 				`json:"max_bulk_count"`
-}
-
-func NewDefaultElasticStoreConf() ElasticStoreConf {
-	var cfg ElasticStoreConf
-	cfg.indicePrefix = "yorc_"
-	cfg.esQueryPeriod = 5 * time.Second
-	cfg.esRefreshTimeout = 5 * time.Second
-	cfg.maxBulkSize = 4000
-	cfg.maxBulkCount = 1000
-	return cfg
+	maxBulkCount int 					`json:"max_bulk_count" 				default:"1000"`
 }
 
 var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
@@ -66,10 +57,10 @@ var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)
 var pfalse = false
 
 type elasticStore struct {
-	codec encoding.Codec
-	esClient *elasticsearch6.Client
+	codec     encoding.Codec
+	esClient  *elasticsearch6.Client
 	clusterId string
-	cfg ElasticStoreConf
+	cfg       elasticStoreConf
 }
 
 type lastIndexResponse struct {
@@ -90,7 +81,7 @@ type stringValue struct {
 	value string 	`json:"value"`
 }
 
-func ExtractIndexNameAndTimestamp(k string) (indexName string, timestamp string) {
+func extractIndexNameAndTimestamp(k string) (indexName string, timestamp string) {
 	res := indexNameAndTimestampRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
@@ -99,7 +90,7 @@ func ExtractIndexNameAndTimestamp(k string) (indexName string, timestamp string)
 	return indexName, timestamp
 }
 
-func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId string) {
+func extractIndexNameAndDeploymentId(k string) (indexName string, deploymentId string) {
 	res := indexNameAndDeploymentIdRegex.FindAllStringSubmatch(k, -1)
 	for i := range res {
 		indexName = res[i][1]
@@ -113,19 +104,25 @@ func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId s
 	return indexName, deploymentId
 }
 
-func GetElasticStorageConfigProperty(fieldName string) string {
-	t := reflect.TypeOf(ElasticStoreConf{})
+func getElasticStorageConfigProperty(fieldName string) string {
+	t := reflect.TypeOf(elasticStoreConf{})
 	f, _ := t.FieldByName(fieldName)
-	return f.Tag.Get("p")
+	return f.Tag.Get("json")
 }
 
-func GetElasticStoreConfig(storeConfig config.Store) ElasticStoreConf {
-	cfg := NewDefaultElasticStoreConf()
+func getElasticStorageConfigDefaultValue(fieldName string) string {
+	t := reflect.TypeOf(elasticStoreConf{})
+	f, _ := t.FieldByName(fieldName)
+	return f.Tag.Get("default")
+}
+
+func getElasticStoreConfig(storeConfig config.Store) elasticStoreConf {
+	var cfg elasticStoreConf
 
 	storeProperties := storeConfig.Properties
 
 	// The ES urls is required
-	k := GetElasticStorageConfigProperty("esUrls")
+	k := getElasticStorageConfigProperty("esUrls")
 	if (storeProperties.IsSet(k)) {
 		cfg.esUrls = storeProperties.GetStringSlice(k)
 		if (cfg.esUrls == nil || len(cfg.esUrls) == 0) {
@@ -135,30 +132,39 @@ func GetElasticStoreConfig(storeConfig config.Store) ElasticStoreConf {
 		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
 	}
 
-	// Define store optionnal configuration
-	k = GetElasticStorageConfigProperty("esQueryPeriod")
+	// Define store optional / default configuration
+	k = getElasticStorageConfigProperty("esQueryPeriod")
 	if (storeProperties.IsSet(k)) {
 		cfg.esQueryPeriod = storeProperties.GetDuration(k)
+	} else {
+		cfg.esQueryPeriod = cast.ToDuration(getElasticStorageConfigDefaultValue("esQueryPeriod"))
 	}
-	k = GetElasticStorageConfigProperty("esRefreshTimeout")
+	k = getElasticStorageConfigProperty("esRefreshWaitTimeout")
 	if (storeProperties.IsSet(k)) {
-		cfg.esRefreshTimeout = storeProperties.GetDuration(k)
+		cfg.esRefreshWaitTimeout = storeProperties.GetDuration(k)
+	} else {
+		cfg.esRefreshWaitTimeout = cast.ToDuration(getElasticStorageConfigDefaultValue("esRefreshWaitTimeout"))
 	}
-	k = GetElasticStorageConfigProperty("indicePrefix")
+	k = getElasticStorageConfigProperty("indicePrefix")
 	if (storeProperties.IsSet(k)) {
 		cfg.indicePrefix = storeProperties.GetString(k)
+	} else {
+		cfg.indicePrefix = getElasticStorageConfigDefaultValue("indicePrefix")
 	}
-	k = GetElasticStorageConfigProperty("maxBulkSize")
+	k = getElasticStorageConfigProperty("maxBulkSize")
 	if (storeProperties.IsSet(k)) {
 		cfg.maxBulkSize = storeProperties.GetInt(k)
+	} else {
+		cfg.maxBulkSize = cast.ToInt(getElasticStorageConfigDefaultValue("maxBulkSize"))
 	}
-	k = GetElasticStorageConfigProperty("maxBulkCount")
+	k = getElasticStorageConfigProperty("maxBulkCount")
 	if (storeProperties.IsSet(k)) {
 		cfg.maxBulkCount = storeProperties.GetInt(k)
+	} else {
+		cfg.maxBulkCount = cast.ToInt(getElasticStorageConfigDefaultValue("maxBulkCount"))
 	}
 
 	return cfg
-
 }
 
 // NewStore returns a new Elastic store
@@ -172,7 +178,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	}
 
 	// Get specific config from storage properties
-	esCfg := GetElasticStoreConfig(storeConfig)
+	esCfg := getElasticStoreConfig(storeConfig)
 
 	var esConfig elasticsearch6.Config
 	esConfig = elasticsearch6.Config{
@@ -180,7 +186,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	}
 
 	log.Printf("Index prefix will be %s", esCfg.indicePrefix)
-	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esCfg.esQueryPeriod, esCfg.esRefreshTimeout)
+	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esCfg.esQueryPeriod, esCfg.esRefreshWaitTimeout)
 	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", esCfg.maxBulkCount, esCfg.maxBulkSize)
 	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
@@ -194,14 +200,14 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		clusterId = cfg.ServerID
 	}
 
-	InitStorageIndices(esClient, esCfg.indicePrefix + "logs")
-	InitStorageIndices(esClient, esCfg.indicePrefix + "events")
-	DebugIndexSetting(esClient, esCfg.indicePrefix + "logs")
-	DebugIndexSetting(esClient, esCfg.indicePrefix + "events")
+	initStorageIndices(esClient, esCfg.indicePrefix + "logs")
+	initStorageIndices(esClient, esCfg.indicePrefix + "events")
+	debugIndexSetting(esClient, esCfg.indicePrefix + "logs")
+	debugIndexSetting(esClient, esCfg.indicePrefix + "events")
 	return &elasticStore{encoding.JSON, esClient, clusterId, esCfg}
 }
 
-func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
+func initStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 	log.Printf("Checking if index <%s> already exists", indiceName)
 
@@ -213,7 +219,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 	}
 	res, err := req.Do(context.Background(), esClient)
-	DebugESResponse("IndicesExistsRequest:" + indiceName, res, err)
+	debugESResponse("IndicesExistsRequest:" + indiceName, res, err)
 	defer res.Body.Close()
 	log.Printf("Status Code for IndicesExistsRequest (%s): %d", indiceName, res.StatusCode)
 
@@ -257,7 +263,7 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 			Body: strings.NewReader(requestBodyData),
 		}
 		res, err := req.Do(context.Background(), esClient)
-		DebugESResponse("IndicesCreateRequest:" + indiceName, res, err)
+		debugESResponse("IndicesCreateRequest:" + indiceName, res, err)
 		defer res.Body.Close()
 		log.Printf("Status Code for IndicesCreateRequest (%s) : %d", indiceName, res.StatusCode)
 		if res.IsError() {
@@ -270,18 +276,18 @@ func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
 
 }
 
-func DebugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
+func debugIndexSetting(esClient *elasticsearch6.Client, indiceName string) {
 	log.Debugf("Get settings for index <%s>", indiceName)
 	req_settings := esapi.IndicesGetSettingsRequest{
 		Index: []string{indiceName},
 		Pretty: true,
 	}
 	res, err := req_settings.Do(context.Background(), esClient)
-	DebugESResponse("IndicesGetSettingsRequest:" + indiceName, res, err)
+	debugESResponse("IndicesGetSettingsRequest:" + indiceName, res, err)
 	defer res.Body.Close()
 }
 
-func DebugESResponse(msg string, res *esapi.Response, err error) {
+func debugESResponse(msg string, res *esapi.Response, err error) {
 	if err != nil {
 		log.Debugf("[%s] Error while requesting ES : %+v", msg, err)
 	} else if res.IsError() {
@@ -295,22 +301,22 @@ func DebugESResponse(msg string, res *esapi.Response, err error) {
 	}
 }
 
-func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
+func (s *elasticStore) refreshIndex(indexName string) {
 	req_get := esapi.IndicesRefreshRequest{
 		Index: []string{indexName},
 		ExpandWildcards: "none",
 		AllowNoIndices: &pfalse,
 	}
-	res, err := req_get.Do(context.Background(), esClient)
+	res, err := req_get.Do(context.Background(), s.esClient)
 	defer res.Body.Close()
-	DebugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
+	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
 
-func (s *elasticStore) BuildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
+func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
 	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
-	indexName, timestamp := ExtractIndexNameAndTimestamp(k)
+	indexName, timestamp := extractIndexNameAndTimestamp(k)
 	log.Debugf("indexName is: %s, timestamp: %s", indexName, timestamp)
 
 	// Convert timestamp to an int64
@@ -347,7 +353,7 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
-	indexName, document, err := s.BuildElasticDocument(k, v)
+	indexName, document, err := s.buildElasticDocument(k, v)
 	if err != nil {
 		return err
 	}
@@ -362,12 +368,12 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      s.GetIndexName(indexName),
+		Index:      s.getIndexName(indexName),
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("IndexRequest:" + s.GetIndexName(indexName), res, err)
+	debugESResponse("IndexRequest:" + s.getIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 
@@ -380,7 +386,7 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 }
 
-func (s *elasticStore) GetIndexName(storeType string) string {
+func (s *elasticStore) getIndexName(storeType string) string {
 	return s.cfg.indicePrefix + storeType
 }
 
@@ -417,13 +423,13 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 				return err
 			}
 
-			indexName, document, err := s.BuildElasticDocument(kv.Key, kv.Value)
+			indexName, document, err := s.buildElasticDocument(kv.Key, kv.Value)
 			if err != nil {
 				return err
 			}
 
 			// The bulk action
-			index := `{ "index" : { "_index" : "` + s.GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
+			index := `{ "index" : { "_index" : "` + s.getIndexName(indexName) + `", "_type" : "logs_or_event" } }`
 
 			// Marshal the document as byte array
 			data, err := s.codec.Marshal(document)
@@ -460,7 +466,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			Body: bytes.NewReader(body),
 		}
 		res, err := req.Do(context.Background(), s.esClient)
-		//DebugESResponse("BulkRequest", res, err)
+		//debugESResponse("BulkRequest", res, err)
 
 		defer res.Body.Close()
 
@@ -514,7 +520,7 @@ func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	log.Debugf("Delete called k: %s, recursive: %t", k, recursive)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := extractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
 	query := `{"query" : { "bool" : { "must" : [{ "term": { "clusterId" : "` + s.clusterId + `" }}, { "term": { "deploymentId" : "` + deploymentId + `" }}]}}}`
@@ -523,12 +529,12 @@ func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	var MaxInt = 1024000
 
 	req := esapi.DeleteByQueryRequest{
-		Index: []string{s.GetIndexName(indexName)},
+		Index: []string{s.getIndexName(indexName)},
 		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("DeleteByQueryRequest:" + s.GetIndexName(indexName), res, err)
+	debugESResponse("DeleteByQueryRequest:" + s.getIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 	return err
@@ -538,14 +544,14 @@ func (s *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	log.Debugf("GetLastModifyIndex called k: %s", k)
 
 	// Extract indice name and deploymentId by parsing the key
-	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := extractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
-	return s.InternalGetLastModifyIndex(s.GetIndexName(indexName), deploymentId)
+	return s.internalGetLastModifyIndex(s.getIndexName(indexName), deploymentId)
 
 }
 
-func ParseInt64StringToUint64(value string) (uint64, error) {
+func parseInt64StringToUint64(value string) (uint64, error) {
 	valueInt, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		return 0, errors.Wrapf(err, "Not able to parse string: %s to int64, error was: %+v", value, err)
@@ -554,11 +560,11 @@ func ParseInt64StringToUint64(value string) (uint64, error) {
 	return result, nil
 }
 
-func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
+func (s *elasticStore) internalGetLastModifyIndex(indexName string, deploymentId string) (uint64, error) {
 
 	// The last_index is query by using ES aggregation query ~= MAX(iid) HAVING deploymentId AND clusterId
-	query := GetLastModifiedIndexQuery(s.clusterId, deploymentId)
-	log.Debugf("GetLastModifiedIndexQuery is : %s", query)
+	query := getLastModifiedIndexQuery(s.clusterId, deploymentId)
+	log.Debugf("getLastModifiedIndexQuery is : %s", query)
 
 	res, err := s.esClient.Search(
 		s.esClient.Search.WithContext(context.Background()),
@@ -594,7 +600,7 @@ func (s *elasticStore) InternalGetLastModifyIndex(indexName string, deploymentId
 	hits := r.hits.total
 	var last_index uint64 = 0
 	if (hits > 0) {
-		last_index, err = ParseInt64StringToUint64(r.aggregations.logs_or_events.last_index.value)
+		last_index, err = parseInt64StringToUint64(r.aggregations.logs_or_events.last_index.value)
 		if err != nil {
 			return last_index, err
 		}
@@ -618,21 +624,21 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	}
 
 	// Extract indice name by parsing the key
-	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
+	indexName, deploymentId := extractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId", indexName, deploymentId)
 
-	query := GetListQuery(s.clusterId, deploymentId, waitIndex, 0)
+	query := getListQuery(s.clusterId, deploymentId, waitIndex, 0)
 
 	now := time.Now()
-	end := now.Add(timeout - s.cfg.esRefreshTimeout)
-	log.Debugf("Now is : %v, date after timeout will be %v (ES timeout duration will be %v)", now, end, timeout - s.cfg.esRefreshTimeout)
+	end := now.Add(timeout - s.cfg.esRefreshWaitTimeout)
+	log.Debugf("Now is : %v, date after timeout will be %v (ES timeout duration will be %v)", now, end, timeout - s.cfg.esRefreshWaitTimeout)
 	var values = make([]store.KeyValueOut, 0)
 	var lastIndex = waitIndex
 	var hits = 0
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = s.DoQueryEs(s.GetIndexName(indexName), query, waitIndex, 1, "desc");
+		hits, values, lastIndex, err = s.doQueryEs(s.getIndexName(indexName), query, waitIndex, 1, "desc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -644,26 +650,26 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		time.Sleep(s.cfg.esQueryPeriod)
 	}
 	if (hits > 0) {
-		// we do have something to retrieve, we will just wait esRefreshTimeout to let any document that has just been stored to be indexed
+		// we do have something to retrieve, we will just wait esRefreshWaitTimeout to let any document that has just been stored to be indexed
 		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
-		query := GetListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
+		query := getListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
 		// force refresh for this index
-		RefreshIndex(s.esClient, s.GetIndexName(indexName));
-		time.Sleep(s.cfg.esRefreshTimeout)
+		s.refreshIndex(s.getIndexName(indexName));
+		time.Sleep(s.cfg.esRefreshWaitTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = s.DoQueryEs(s.GetIndexName(indexName), query, waitIndex, 10000, "asc");
+		hits, values, lastIndex, err = s.doQueryEs(s.getIndexName(indexName), query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if hits > oldHits {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, s.cfg.esRefreshTimeout, s.GetIndexName(indexName), len(values))
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, s.cfg.esRefreshWaitTimeout, s.getIndexName(indexName), len(values))
 		}
 	}
 	log.Debugf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
 
-func GetLastModifiedIndexQuery(clusterId string, deploymentId string) string {
+func getLastModifiedIndexQuery(clusterId string, deploymentId string) string {
 	var query string
 	if len(deploymentId) == 0 {
 		query = `
@@ -705,7 +711,7 @@ func GetLastModifiedIndexQuery(clusterId string, deploymentId string) string {
 // the max uint is 9223372036854775807 (19 cars), this is the maximum nano for a time (2262-04-12 00:47:16.854775807 +0100 CET)
 // since we use nanotimestamp as ID for events and logs, and since we store this ID as string in ES index, we must ensure that
 // the string will be comparable.
-func GetSortableStringFromUint64(nanoTimestamp uint64) string {
+func getSortableStringFromUint64(nanoTimestamp uint64) string {
 	nanoTimestampStr := strconv.FormatUint(nanoTimestamp, 10)
 	if len(nanoTimestampStr) < 19 {
 		nanoTimestampStr = strings.Repeat("0", 19 - len(nanoTimestampStr)) + nanoTimestampStr
@@ -713,7 +719,7 @@ func GetSortableStringFromUint64(nanoTimestamp uint64) string {
 	return nanoTimestampStr
 }
 
-func GetListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIndex uint64) string {
+func getListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIndex uint64) string {
 
 	var rangeQuery, query string
 	if maxIndex > 0 {
@@ -721,8 +727,8 @@ func GetListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt": "` + GetSortableStringFromUint64(waitIndex) + `",
-					 "lte": "` + GetSortableStringFromUint64(maxIndex) + `"
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `",
+					 "lte": "` + getSortableStringFromUint64(maxIndex) + `"
                   }
                }
             }`
@@ -731,7 +737,7 @@ func GetListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
             {
                "range":{
                   "iid":{
-                     "gt": "` + GetSortableStringFromUint64(waitIndex) + `"
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `"
                   }
                }
             }`
@@ -775,7 +781,7 @@ func GetListQuery(clusterId string, deploymentId string, waitIndex uint64, maxIn
 	return query
 }
 
-func (s *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, size int, order string) (int, []store.KeyValueOut, uint64, error) {
+func (s *elasticStore) doQueryEs(index string, query string, waitIndex uint64, size int, order string) (int, []store.KeyValueOut, uint64, error) {
 	log.Debugf("Search ES %s using query: %s", index, query)
 
 	values := make([]store.KeyValueOut, 0)
@@ -829,7 +835,7 @@ func (s *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, s
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
 		iid := source["iid"]
-		iid_int64, err := ParseInt64StringToUint64(iid.(string))
+		iid_int64, err := parseInt64StringToUint64(iid.(string))
 		if err != nil {
 			log.Println(strings.Repeat("#", 37))
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source);
@@ -853,7 +859,7 @@ func (s *elasticStore) DoQueryEs(index string, query string, waitIndex uint64, s
 		}
 	}
 
-	log.Debugf("DoQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
+	log.Debugf("doQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
 }
 
