@@ -35,12 +35,15 @@ import (
 	"fmt"
 	"reflect"
 	"github.com/spf13/cast"
+	"io/ioutil"
 )
 
 // elasticStoreConf represents the elastic store configuration that can be set in store.properties configuration.
 type elasticStoreConf struct {
 	// The ES cluster urls (array or CSV)
 	esUrls []string 					`json:"es_urls"`
+	// The path to the CACert file when TLS is activated for ES
+	caCertPath string 					`json:"ca_cert_path"`
 	// All index used by yorc will be prefixed by this prefix
 	indicePrefix string 				`json:"index_prefix" default:"yorc_"`
 	// When querying logs and event, we wait this timeout before each request when it returns nothing
@@ -138,9 +141,9 @@ func getElasticStoreConfig(storeConfig config.Store) elasticStoreConf {
 
 	// The ES urls is required
 	k := getElasticStorageConfigPropertyTag("esUrls", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.esUrls = storeProperties.GetStringSlice(k)
-		if (cfg.esUrls == nil || len(cfg.esUrls) == 0) {
+		if cfg.esUrls == nil || len(cfg.esUrls) == 0 {
 			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(k))
 		}
 	} else {
@@ -148,38 +151,42 @@ func getElasticStoreConfig(storeConfig config.Store) elasticStoreConf {
 	}
 
 	// Define store optional / default configuration
+	k = getElasticStorageConfigPropertyTag("caCertPath", "json")
+	if storeProperties.IsSet(k) {
+		cfg.caCertPath =  storeProperties.GetString(k)
+	}
 	k = getElasticStorageConfigPropertyTag("esQueryPeriod", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.esQueryPeriod = storeProperties.GetDuration(k)
 	} else {
 		cfg.esQueryPeriod = cast.ToDuration(getElasticStorageConfigPropertyTag("esQueryPeriod", "default"))
 	}
 	k = getElasticStorageConfigPropertyTag("esForceRefresh", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.esForceRefresh = storeProperties.GetBool(k)
 	} else {
 		cfg.esForceRefresh = cast.ToBool(getElasticStorageConfigPropertyTag("esForceRefresh", "default"))
 	}
 	k = getElasticStorageConfigPropertyTag("esRefreshWaitTimeout", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.esRefreshWaitTimeout = storeProperties.GetDuration(k)
 	} else {
 		cfg.esRefreshWaitTimeout = cast.ToDuration(getElasticStorageConfigPropertyTag("esRefreshWaitTimeout", "default"))
 	}
 	k = getElasticStorageConfigPropertyTag("indicePrefix", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.indicePrefix = storeProperties.GetString(k)
 	} else {
 		cfg.indicePrefix = getElasticStorageConfigPropertyTag("indicePrefix", "default")
 	}
 	k = getElasticStorageConfigPropertyTag("maxBulkSize", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.maxBulkSize = storeProperties.GetInt(k)
 	} else {
 		cfg.maxBulkSize = cast.ToInt(getElasticStorageConfigPropertyTag("maxBulkSize", "default"))
 	}
 	k = getElasticStorageConfigPropertyTag("maxBulkCount", "json")
-	if (storeProperties.IsSet(k)) {
+	if storeProperties.IsSet(k) {
 		cfg.maxBulkCount = storeProperties.GetInt(k)
 	} else {
 		cfg.maxBulkCount = cast.ToInt(getElasticStorageConfigPropertyTag("maxBulkCount", "default"))
@@ -206,6 +213,15 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	var esConfig elasticsearch6.Config
 	esConfig = elasticsearch6.Config{
 		Addresses: esCfg.esUrls,
+	}
+
+	if len(esCfg.caCertPath) > 0 {
+		log.Printf("Reading CACert file from %s", esCfg.caCertPath)
+		cert, err := ioutil.ReadFile(esCfg.caCertPath)
+		if err != nil {
+			log.Panicf("Not able to read Cert file from <%s>, error was %+v", esCfg.caCertPath, err)
+		}
+		esConfig.CACert = cert
 	}
 
 	log.Printf("Elastic storage will run using this configuration: %+v", esCfg)
@@ -680,7 +696,7 @@ func (s *elasticStore) internalGetLastModifyIndex(indexName string, deploymentId
 
 	hits := r.hits.total
 	var last_index uint64 = 0
-	if (hits > 0) {
+	if hits > 0 {
 		last_index, err = parseInt64StringToUint64(r.aggregations.logs_or_events.last_index.value)
 		if err != nil {
 			return last_index, err
@@ -737,12 +753,14 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, s.cfg.esQueryPeriod)
 		time.Sleep(s.cfg.esQueryPeriod)
 	}
-	if (hits > 0) {
+	if hits > 0 {
 		// we do have something to retrieve, we will just wait esRefreshWaitTimeout to let any document that has just been stored to be indexed
 		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
 		query := getListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
-		// force refresh for this index
-		s.refreshIndex(indexName);
+		if s.cfg.esForceRefresh {
+			// force refresh for this index
+			s.refreshIndex(indexName);
+		}
 		time.Sleep(s.cfg.esRefreshWaitTimeout)
 		oldHits := hits
 		hits, values, lastIndex, err = s.doQueryEs(indexName, query, waitIndex, 10000, "asc");
