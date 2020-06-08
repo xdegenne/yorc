@@ -41,16 +41,16 @@ type elasticStoreConf struct {
 	// The ES cluster urls (array or CSV)
 	esUrls []string 					`json:"es_urls"`
 	// All index used by yorc will be prefixed by this prefix
-	indicePrefix string 				`json:"index_prefix" 				default:"yorc_"`
+	indicePrefix string 				`json:"index_prefix" default:"yorc_"`
 	// When querying logs and event, we wait this timeout before each request when it returns nothing
 	// (until something is returned or the waitTimeout is reached)
-	esQueryPeriod time.Duration 		`json:"es_query_period" 			default:"5s"`
+	esQueryPeriod time.Duration 		`json:"es_query_period" default:"5s"`
 	// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-	esRefreshWaitTimeout time.Duration `json:"es_refresh_wait_timeout" 		default:"5s"`
+	esRefreshWaitTimeout time.Duration `json:"es_refresh_wait_timeout" default:"5s"`
 	// This is the maximum size (in kB) of bulk request sent while migrating data
-	maxBulkSize int 					`json:"max_bulk_size" 				default:"4000"`
+	maxBulkSize int 					`json:"max_bulk_size" default:"4000"`
 	// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
-	maxBulkCount int 					`json:"max_bulk_count" 				default:"1000"`
+	maxBulkCount int 					`json:"max_bulk_count" default:"1000"`
 }
 
 var pfalse = false
