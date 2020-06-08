@@ -124,7 +124,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	// The ES urls is required
 	if (storeProperties.IsSet(es_urls)) {
 		elastic_urls := storeProperties.GetStringSlice(es_urls)
-		if (es_urls == nil || len(es_urls) == 0) {
+		if (elastic_urls == nil || len(elastic_urls) == 0) {
 			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(es_urls))
 		}
 		esConfig = elasticsearch6.Config{
