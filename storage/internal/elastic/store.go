@@ -48,6 +48,8 @@ type elasticStoreConf struct {
 	esQueryPeriod time.Duration 		`json:"es_query_period" default:"5s"`
 	// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
 	esRefreshWaitTimeout time.Duration 	`json:"es_refresh_wait_timeout" default:"5s"`
+	// When querying ES, force refresh index before waiting for refresh
+	esForceRefresh bool 				`json:"es_force_refresh" default:"true"`
 	// This is the maximum size (in kB) of bulk request sent while migrating data
 	maxBulkSize int 					`json:"max_bulk_size" default:"4000"`
 	// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
@@ -152,6 +154,12 @@ func getElasticStoreConfig(storeConfig config.Store) elasticStoreConf {
 	} else {
 		cfg.esQueryPeriod = cast.ToDuration(getElasticStorageConfigPropertyTag("esQueryPeriod", "default"))
 	}
+	k = getElasticStorageConfigPropertyTag("esForceRefresh", "json")
+	if (storeProperties.IsSet(k)) {
+		cfg.esForceRefresh = storeProperties.GetBool(k)
+	} else {
+		cfg.esForceRefresh = cast.ToBool(getElasticStorageConfigPropertyTag("esForceRefresh", "default"))
+	}
 	k = getElasticStorageConfigPropertyTag("esRefreshWaitTimeout", "json")
 	if (storeProperties.IsSet(k)) {
 		cfg.esRefreshWaitTimeout = storeProperties.GetDuration(k)
@@ -200,10 +208,16 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		Addresses: esCfg.esUrls,
 	}
 
-	log.Printf("Index prefix will be %s", esCfg.indicePrefix)
-	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esCfg.esQueryPeriod, esCfg.esRefreshWaitTimeout)
-	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", esCfg.maxBulkCount, esCfg.maxBulkSize)
-	log.Printf("Will use this ES client configuration: %+v", esConfig)
+	log.Printf("Elastic storage will run using this configuration: %+v", esCfg)
+	log.Printf("\t- Index prefix will be %s", esCfg.indicePrefix)
+	log.Printf("\t- Will query ES for logs or events every %v and will wait for index refresh during %v", esCfg.esQueryPeriod, esCfg.esRefreshWaitTimeout)
+	willRefresh := ""
+	if !esCfg.esForceRefresh {
+		willRefresh = "not "
+	}
+	log.Printf("\t- Will %srefresh index before waiting for indexation", willRefresh)
+	log.Printf("\t- While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", esCfg.maxBulkCount, esCfg.maxBulkSize)
+	log.Printf("\t- Will use this ES client configuration: %+v", esConfig)
 
 	esClient, _ := elasticsearch6.NewClient(esConfig)
 
@@ -348,7 +362,7 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []
 
 	// This is the piece of 'JSON' we want to append
 	a := `,"iid":"` + strconv.FormatInt(iid, 10) + `","clusterId":"` + s.clusterId + `"`
-
+	// v is a json.RawMessage
 	raw := v.(json.RawMessage)
 	raw = appendJsonInBytes(raw, []byte(a))
 
