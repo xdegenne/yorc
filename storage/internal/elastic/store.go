@@ -362,12 +362,12 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
-		Index:      GetIndexName(indexName),
+		Index:      s.GetIndexName(indexName),
 		DocumentType: "logs_or_event",
 		Body:       bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("IndexRequest:" + GetIndexName(indexName), res, err)
+	DebugESResponse("IndexRequest:" + s.GetIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 
@@ -380,8 +380,8 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	}
 }
 
-func GetIndexName(storeType string) string {
-	return indicePrefix + storeType
+func (s *elasticStore) GetIndexName(storeType string) string {
+	return s.cfg.indicePrefix + storeType
 }
 
 func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyValueIn) error {
@@ -423,7 +423,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			}
 
 			// The bulk action
-			index := `{ "index" : { "_index" : "` + GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
+			index := `{ "index" : { "_index" : "` + s.GetIndexName(indexName) + `", "_type" : "logs_or_event" } }`
 
 			// Marshal the document as byte array
 			data, err := s.codec.Marshal(document)
@@ -523,12 +523,12 @@ func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 	var MaxInt = 1024000
 
 	req := esapi.DeleteByQueryRequest{
-		Index: []string{GetIndexName(indexName)},
+		Index: []string{s.GetIndexName(indexName)},
 		Size: &MaxInt,
 		Body: strings.NewReader(query),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
-	DebugESResponse("DeleteByQueryRequest:" + GetIndexName(indexName), res, err)
+	DebugESResponse("DeleteByQueryRequest:" + s.GetIndexName(indexName), res, err)
 
 	defer res.Body.Close()
 	return err
@@ -541,7 +541,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (uint64, error) {
 	indexName, deploymentId := ExtractIndexNameAndDeploymentId(k)
 	log.Debugf("indexName is: %s, deploymentId is: %s", indexName, deploymentId)
 
-	return s.InternalGetLastModifyIndex(GetIndexName(indexName), deploymentId)
+	return s.InternalGetLastModifyIndex(s.GetIndexName(indexName), deploymentId)
 
 }
 
@@ -632,7 +632,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = s.DoQueryEs(GetIndexName(indexName), query, waitIndex, 1, "desc");
+		hits, values, lastIndex, err = s.DoQueryEs(s.GetIndexName(indexName), query, waitIndex, 1, "desc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -648,15 +648,15 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		// then we just retrieve this 'time window' (between waitIndex and lastIndex)
 		query := GetListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
 		// force refresh for this index
-		RefreshIndex(s.esClient, GetIndexName(indexName));
+		RefreshIndex(s.esClient, s.GetIndexName(indexName));
 		time.Sleep(s.cfg.esRefreshTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = s.DoQueryEs(GetIndexName(indexName), query, waitIndex, 10000, "asc");
+		hits, values, lastIndex, err = s.DoQueryEs(s.GetIndexName(indexName), query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if hits > oldHits {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, s.cfg.esRefreshTimeout, GetIndexName(indexName), len(values))
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, s.cfg.esRefreshTimeout, s.GetIndexName(indexName), len(values))
 		}
 	}
 	log.Debugf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
