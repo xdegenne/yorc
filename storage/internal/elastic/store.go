@@ -347,7 +347,7 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []
 	iid := eventDate.UnixNano()
 
 	// This is the piece of 'JSON' we want to append
-	a := `,"iid:"` + strconv.FormatInt(iid, 10) + `","clusterId":"` + s.clusterId + `"`
+	a := `,"iid"":"` + strconv.FormatInt(iid, 10) + `","clusterId":"` + s.clusterId + `"`
 
 	raw := v.(json.RawMessage)
 	raw = appendJsonInBytes(raw, []byte(a))
@@ -476,7 +476,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		}
 		fmt.Printf("Bulk iteration #%d", i)
 
-		body := make([]byte, 0)
+		body := make([]byte, s.cfg.maxBulkSize * 1024)
 		bulkActionCount := 0
 		for {
 			if kvi == totalDocumentCount || bulkActionCount == s.cfg.maxBulkCount {
@@ -494,21 +494,23 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			}
 
 			// The bulk action
-			index := `{ "index" : { "_index" : "` + s.getIndexName(storeType) + `", "_type" : "logs_or_event" } }`
+			index := `{"index":{"_index":"` + s.getIndexName(storeType) + `","_type":"logs_or_event"}}`
+			bulkOperation := make([]byte, len(index) + len(document) + 6)
+			bulkOperation = append(bulkOperation, index...)
+			bulkOperation = append(bulkOperation, "\n"...)
+			bulkOperation = append(bulkOperation, document...)
+			bulkOperation = append(bulkOperation, "\n"...)
 
-			// 6 = len("\n\n\n")
-			estimatedBodySize := len(body) + len(index) + len(document) + 6
+			// 1 = len("\n") the last newline that will append to terminate the bulk request
+			estimatedBodySize := len(body) + len(bulkOperation) + 1
 			if estimatedBodySize > s.cfg.maxBulkSize * 1024 {
 				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", s.cfg.maxBulkSize, estimatedBodySize, s.cfg.maxBulkSize * 1024)
 				break
 			} else {
-				log.Debugf("Document built from key %s added to bulk request body, storeType was %s", kv.Key, storeType)
+				log.Debugf("Append document built from key %s to bulk request body, storeType was %s", kv.Key, storeType)
 
-				// TODO: optimize since append will copy doc
-				body = append(body, index...)
-				body = append(body, "\n"...)
-				body = append(body, document...)
-				body = append(body, "\n"...)
+				// Append the bulk operation
+				body = append(body, bulkOperation...)
 
 				kvi++;
 				bulkActionCount++;
@@ -517,6 +519,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 
 		// The bulk request must be terminated by a newline
 		body = append(body, "\n"...)
+
 		log.Printf("About to bulk request index using %d documents (%d bytes)", bulkActionCount, len(body))
 		if log.IsDebug() {
 			log.Debugf("About to send bulk request query to ES: %s", string(body))
