@@ -45,7 +45,7 @@ var esQueryPeriod = 5 * time.Second
 var esRefreshTimeout = (5 * time.Second)
 // This is the maximum size (in term of number of documents) of bulk request sent while migrating data
 var maxBulkCount = 1000
-// This is approximately the maximum size (in kB) of bulk request sent while migrating data (+/- 2 bytes)
+// This is the maximum size (in kB) of bulk request sent while migrating data
 var maxBulkSize = 4000
 var pfalse = false
 
@@ -139,7 +139,7 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		maxBulkCount = storeProperties.GetInt("max_bulk_count")
 	}
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esQueryPeriod, esRefreshTimeout)
-	log.Printf("While migrating data, the max bulk request size will be %d", maxBulkSize)
+	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", maxBulkCount, maxBulkSize)
 	log.Printf("Index prefix will be %s", indicePrefix)
 	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
@@ -352,8 +352,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		return nil
 	}
 
-	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkSize))))
-	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk insert data of total length %d", maxBulkSize, iterationCount + 1, totalDocumentCount)
+	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkCount))))
+	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk insert data of total length %d", maxBulkCount, iterationCount + 1, totalDocumentCount)
 
 	// The current index in []keyValues (also the number of documents indexed)
 	var kvi int = 0
@@ -368,7 +368,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		body := make([]byte, 0)
 		bulkRequestSize := 0
 		for {
-			if kvi == totalDocumentCount || bulkRequestSize == maxBulkSize {
+			if kvi == totalDocumentCount || bulkRequestSize == maxBulkCount {
 				break
 			}
 
