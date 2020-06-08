@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package elastic procvides an implementation of a storage that index and get documents from elasticsearch 6.x.
+// Package elastic provides an implementation of a storage that index and get documents from Elasticsearch 6.x.
 package elastic
 
 import (
@@ -37,6 +37,7 @@ import (
 	"github.com/spf13/cast"
 )
 
+// elasticStoreConf represents the elastic store configuration that can be set in store.properties configuration.
 type elasticStoreConf struct {
 	// The ES cluster urls (array or CSV)
 	esUrls []string 					`json:"es_urls"`
@@ -62,6 +63,7 @@ type elasticStore struct {
 	cfg       elasticStoreConf
 }
 
+// structs for lastIndexRequest response decoding.
 type lastIndexResponse struct {
 	hits         hits                  `json:"hits"`
 	aggregations logOrEventAggregation `json:"aggregations"`
