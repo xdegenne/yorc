@@ -123,12 +123,12 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
 	// The ES urls is required
 	if (storeProperties.IsSet(es_urls)) {
-		es_urls := storeProperties.GetStringSlice(es_urls)
+		elastic_urls := storeProperties.GetStringSlice(es_urls)
 		if (es_urls == nil || len(es_urls) == 0) {
 			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(es_urls))
 		}
 		esConfig = elasticsearch6.Config{
-			Addresses: es_urls,
+			Addresses: elastic_urls,
 		}
 	} else {
 		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
@@ -276,7 +276,6 @@ func RefreshIndex(esClient *elasticsearch6.Client, indexName string) {
 	defer res.Body.Close()
 	DebugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
-
 
 func (s *elasticStore) BuildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
 	var document map[string]interface{}
