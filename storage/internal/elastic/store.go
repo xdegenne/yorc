@@ -353,7 +353,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 	}
 
 	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkActionsCount))))
-	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk insert data of total length %d", maxBulkActionsCount, iterationCount + 1, totalDocumentCount)
+	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk index the %d documents", maxBulkActionsCount, iterationCount, totalDocumentCount)
 
 	// The current index in []keyValues (also the number of documents indexed)
 	var kvi int = 0
