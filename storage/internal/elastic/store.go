@@ -334,6 +334,28 @@ func (s *elasticStore) refreshIndex(indexName string) {
 // The document is enriched by adding 'clusterId' and 'iid' properties.
 // TODO: Can be optimized by directly adding the entries in byte array (rather than marshaling / unmarshaling twice)
 func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []byte, error) {
+	// Extract indice name and timestamp by parsing the key
+	storeType, timestamp := extractStoreTypeAndTimestamp(k)
+	log.Debugf("storeType is: %s, timestamp: %s", storeType, timestamp)
+
+	// Convert timestamp to an int64
+	eventDate, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		return storeType, nil, errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
+	}
+	// Convert to UnixNano int64
+	iid := eventDate.UnixNano()
+
+	// This is the piece of 'JSON' we want to append
+	a := `,"iid:"` + strconv.FormatInt(iid, 10) + `","clusterId":"` + s.clusterId + `"`
+
+	raw := v.(json.RawMessage)
+	raw = appendJsonInBytes(raw, []byte(a))
+
+	return storeType, raw, nil
+}
+
+func (s *elasticStore) _buildElasticDocument(k string, v interface{}) (string, []byte, error) {
 	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
@@ -372,6 +394,20 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []
 	}
 
 	return storeType, body, nil
+}
+
+// We need to append JSON directly into []byte to avoid useless and costly  marshaling / unmarshaling.
+func appendJsonInBytes(a []byte, v []byte) []byte {
+	last := len(a) - 1
+	lastByte := a[last]
+	// just append v at the end
+	a = append(a, v...)
+	// then slice
+	for i, s := range v {
+		a[last + i] = s
+	}
+	a[last - 1 + len(v)] = lastByte
+	return a
 }
 
 // Set index a document (log or event) into ES.
