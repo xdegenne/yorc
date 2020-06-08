@@ -44,7 +44,7 @@ var esQueryPeriod = 5 * time.Second
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
 var esRefreshTimeout = (5 * time.Second)
 // This is the maximum size (in term of number of documents) of bulk request sent while migrating data
-var maxBulkCount = 1000
+var maxBulkActionsCount = 1000
 // This is the maximum size (in kB) of bulk request sent while migrating data
 var maxBulkSize = 4000
 var pfalse = false
@@ -136,10 +136,10 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		maxBulkSize = storeProperties.GetInt("max_bulk_size")
 	}
 	if (storeProperties.IsSet("max_bulk_count")) {
-		maxBulkCount = storeProperties.GetInt("max_bulk_count")
+		maxBulkActionsCount = storeProperties.GetInt("max_bulk_count")
 	}
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esQueryPeriod, esRefreshTimeout)
-	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", maxBulkCount, maxBulkSize)
+	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", maxBulkActionsCount, maxBulkSize)
 	log.Printf("Index prefix will be %s", indicePrefix)
 	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
@@ -352,8 +352,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		return nil
 	}
 
-	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkCount))))
-	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk insert data of total length %d", maxBulkCount, iterationCount + 1, totalDocumentCount)
+	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkActionsCount))))
+	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk insert data of total length %d", maxBulkActionsCount, iterationCount + 1, totalDocumentCount)
 
 	// The current index in []keyValues (also the number of documents indexed)
 	var kvi int = 0
@@ -366,9 +366,9 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		fmt.Printf("Bulk iteration #%d", i)
 
 		body := make([]byte, 0)
-		bulkRequestSize := 0
+		bulkActionCount := 0
 		for {
-			if kvi == totalDocumentCount || bulkRequestSize == maxBulkCount {
+			if kvi == totalDocumentCount || bulkActionCount == maxBulkActionsCount {
 				break
 			}
 
@@ -390,7 +390,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			if err != nil {
 				return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
 			}
-			// 4 = len("\n\n\n")
+			// 6 = len("\n\n\n")
 			estimatedBodySize := len(body) + len(index) + len(data) + 6
 			if estimatedBodySize > maxBulkSize * 1024 {
 				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", maxBulkSize, estimatedBodySize, maxBulkSize * 1024)
@@ -404,13 +404,13 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 				body = append(body, "\n"...)
 
 				kvi++;
-				bulkRequestSize++;
+				bulkActionCount++;
 			}
 		}
 
 		// The bulk request must be terminated by a newline
 		body = append(body, "\n"...)
-		log.Printf("About to bulk request index using %d documents (%d bytes)", bulkRequestSize, len(body))
+		log.Printf("About to bulk request index using %d documents (%d bytes)", bulkActionCount, len(body))
 		if log.IsDebug() {
 			log.Debugf("About to send bulk request query to ES: %s", string(body))
 		}
@@ -435,13 +435,13 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 				// The bulk request contains errors
 				return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
 			} else {
-				log.Printf("Bulk request containing %d documents (%d bytes) has been accepted without errors", bulkRequestSize, len(body))
+				log.Printf("Bulk request containing %d documents (%d bytes) has been accepted without errors", bulkActionCount, len(body))
 			}
 		}
 		// increment the number of iterations
 		i++
 	}
-	log.Printf("A total of %d documents have been successfully indexed using %d bulk requests", kvi, iterationCount)
+	log.Printf("A total of %d documents have been successfully indexed using %d bulk requests", kvi, i)
 
 	return nil
 }
