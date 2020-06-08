@@ -349,12 +349,11 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []
 	iid := eventDate.UnixNano()
 
 	//raw := v.(json.RawMessage)
-
-
+	
 	// v is a json.RawMessage
 	data, err := s.codec.Marshal(v)
 	if err != nil {
-		return storeType, document, errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
+		return storeType, nil, errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", v, err)
 	}
 	var unmarshaledDocument interface{}
 	json.Unmarshal(data, &unmarshaledDocument)
