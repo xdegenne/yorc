@@ -120,7 +120,7 @@ func GetElasticStorageConfigProperty(fieldName string) string {
 }
 
 func GetElasticStoreConfig(storeConfig config.Store) ElasticStoreConf {
-	cfg = NewDefaultElasticStoreConf()
+	cfg := NewDefaultElasticStoreConf()
 
 	storeProperties := storeConfig.Properties
 
