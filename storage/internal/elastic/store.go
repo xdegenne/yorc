@@ -46,7 +46,7 @@ type elasticStoreConf struct {
 	// (until something is returned or the waitTimeout is reached)
 	esQueryPeriod time.Duration 		`json:"es_query_period" default:"5s"`
 	// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-	esRefreshWaitTimeout time.Duration `json:"es_refresh_wait_timeout" default:"5s"`
+	esRefreshWaitTimeout time.Duration 	`json:"es_refresh_wait_timeout" default:"5s"`
 	// This is the maximum size (in kB) of bulk request sent while migrating data
 	maxBulkSize int 					`json:"max_bulk_size" default:"4000"`
 	// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
@@ -114,7 +114,14 @@ func extractStoreTypeAndDeploymentId(k string) (storeType string, deploymentId s
 // Get the JSON tag for this field ignoring error (for internal usage only !)
 func getElasticStorageConfigPropertyTag(fn string, tn string) string {
 	t := reflect.TypeOf(elasticStoreConf{})
-	f, _ := t.FieldByName(fn)
+	f, found := t.FieldByName(fn)
+	if !found {
+		log.Fatalf("Not able to get field %s on elasticStoreConf struct, there is an issue with this code !", fn)
+	}
+	tv := f.Tag.Get(tn)
+	if tv == "" {
+		log.Fatalf("Not able to get field %s's tag %s value on elasticStoreConf struct, there is an issue with this code !", fn, tn)
+	}
 	return f.Tag.Get(tn)
 }
 
