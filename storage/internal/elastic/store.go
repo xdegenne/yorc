@@ -343,13 +343,13 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []
 	// Convert timestamp to an int64
 	eventDate, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
-		return storeType, document, errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
+		return storeType, nil, errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
 	}
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
 
 	//raw := v.(json.RawMessage)
-	
+
 	// v is a json.RawMessage
 	data, err := s.codec.Marshal(v)
 	if err != nil {
@@ -461,13 +461,14 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			index := `{ "index" : { "_index" : "` + s.getIndexName(storeType) + `", "_type" : "logs_or_event" } }`
 
 			// 6 = len("\n\n\n")
-			estimatedBodySize := len(body) + len(index) + len(data) + 6
+			estimatedBodySize := len(body) + len(index) + len(document) + 6
 			if estimatedBodySize > s.cfg.maxBulkSize * 1024 {
 				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", s.cfg.maxBulkSize, estimatedBodySize, s.cfg.maxBulkSize * 1024)
 				break
 			} else {
 				log.Debugf("Document built from key %s added to bulk request body, storeType was %s", kv.Key, storeType)
 
+				// TODO: optimize since append will copy doc
 				body = append(body, index...)
 				body = append(body, "\n"...)
 				body = append(body, document...)
