@@ -492,8 +492,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 
 			// 1 = len("\n") the last newline that will append to terminate the bulk request
 			estimatedBodySize := len(body) + len(bulkOperation) + 1
-			if estimatedBodySize > maxBulkSizeInBytes {
-				return errors.Errorf("A bulk operation size (order + document %s) is greater than the maximum bulk size authorized (%dkB) : %d > %d, this document can't be sent to ES, please adapt your configuration !", kv.Key, s.cfg.maxBulkSize, estimatedBodySize, maxBulkSizeInBytes)
+			if len(bulkOperation) > maxBulkSizeInBytes {
+				return errors.Errorf("A bulk operation size (order + document %s) is greater than the maximum bulk size authorized (%dkB) : %d > %d, this document can't be sent to ES, please adapt your configuration !", kv.Key, s.cfg.maxBulkSize, len(bulkOperation), maxBulkSizeInBytes)
 			}
 			if estimatedBodySize > maxBulkSizeInBytes {
 				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", s.cfg.maxBulkSize, estimatedBodySize, maxBulkSizeInBytes)
