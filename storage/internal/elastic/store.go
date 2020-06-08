@@ -34,19 +34,30 @@ import (
 	"fmt"
 )
 
-var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
-//var indexNameRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.*`)
-var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
-// All index used by yorc will be prefixed by this prefix
-var indicePrefix = "yorc_"
+const es_urls = "es_urls"
+
 // When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
+const es_query_period = "es_query_period"
 var esQueryPeriod = 5 * time.Second
+
 // This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
+const es_refresh_wait_timeout = "es_refresh_wait_timeout"
 var esRefreshTimeout = (5 * time.Second)
-// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
-var maxBulkActionsCount = 1000
+
+// All index used by yorc will be prefixed by this prefix
+const index_prefix = "index_prefix"
+var indicePrefix = "yorc_"
+
 // This is the maximum size (in kB) of bulk request sent while migrating data
+const max_bulk_size = "max_bulk_size"
 var maxBulkSize = 4000
+
+// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
+const max_bulk_count = "max_bulk_count"
+var maxBulkActionsCount = 1000
+
+var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
+var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
 var pfalse = false
 
 type elasticStore struct {
@@ -111,10 +122,10 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	var esConfig elasticsearch6.Config
 
 	// The ES urls is required
-	if (storeProperties.IsSet("es_urls")) {
-		es_urls := storeProperties.GetStringSlice("es_urls")
+	if (storeProperties.IsSet(es_urls)) {
+		es_urls := storeProperties.GetStringSlice(es_urls)
 		if (es_urls == nil || len(es_urls) == 0) {
-			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get("es_urls"))
+			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(es_urls))
 		}
 		esConfig = elasticsearch6.Config{
 			Addresses: es_urls,
@@ -123,20 +134,21 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
 	}
 
-	if (storeProperties.IsSet("es_query_period")) {
-		esQueryPeriod = storeProperties.GetDuration("es_query_period")
+	// Define store optionnal configuration
+	if (storeProperties.IsSet(es_query_period)) {
+		esQueryPeriod = storeProperties.GetDuration(es_query_period)
 	}
-	if (storeProperties.IsSet("es_refresh_wait_timeout")) {
-		esRefreshTimeout = storeProperties.GetDuration("es_refresh_wait_timeout")
+	if (storeProperties.IsSet(es_refresh_wait_timeout)) {
+		esRefreshTimeout = storeProperties.GetDuration(es_refresh_wait_timeout)
 	}
-	if (storeProperties.IsSet("index_prefix")) {
-		indicePrefix = storeProperties.GetString("index_prefix")
+	if (storeProperties.IsSet(index_prefix)) {
+		indicePrefix = storeProperties.GetString(index_prefix)
 	}
-	if (storeProperties.IsSet("max_bulk_size")) {
-		maxBulkSize = storeProperties.GetInt("max_bulk_size")
+	if (storeProperties.IsSet(max_bulk_size)) {
+		maxBulkSize = storeProperties.GetInt(max_bulk_size)
 	}
-	if (storeProperties.IsSet("max_bulk_count")) {
-		maxBulkActionsCount = storeProperties.GetInt("max_bulk_count")
+	if (storeProperties.IsSet(max_bulk_count)) {
+		maxBulkActionsCount = storeProperties.GetInt(max_bulk_count)
 	}
 	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esQueryPeriod, esRefreshTimeout)
 	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", maxBulkActionsCount, maxBulkSize)
