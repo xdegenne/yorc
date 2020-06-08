@@ -331,9 +331,9 @@ func (s *elasticStore) refreshIndex(indexName string) {
 	debugESResponse("IndicesRefreshRequest:"  + indexName, res, err)
 }
 
-// The document is built by adding 'clusterId' and 'iid' properties.
+// The document is enriched by adding 'clusterId' and 'iid' properties.
 // TODO: Can be optimized by directly adding the entries in byte array (rather than marshaling / unmarshaling twice)
-func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, map[string]interface{}, error) {
+func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, []byte, error) {
 	var document map[string]interface{}
 
 	// Extract indice name and timestamp by parsing the key
@@ -347,6 +347,9 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, ma
 	}
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
+
+	//raw := v.(json.RawMessage)
+
 
 	// v is a json.RawMessage
 	data, err := s.codec.Marshal(v)
@@ -364,7 +367,12 @@ func (s *elasticStore) buildElasticDocument(k string, v interface{}) (string, ma
 	// TODO ?? ensure we have 19 cars ?
 	document["iid"] = strconv.FormatInt(iid, 10)
 
-	return storeType, document, nil
+	body, err := s.codec.Marshal(document)
+	if err != nil {
+		return storeType, nil, errors.Wrapf(err, "Failed to marshal document %+v due to error: %+v", document, err)
+	}
+
+	return storeType, body, nil
 }
 
 // Set index a document (log or event) into ES.
@@ -375,14 +383,9 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		return err
 	}
 
-	storeType, document, err := s.buildElasticDocument(k, v)
+	storeType, body, err := s.buildElasticDocument(k, v)
 	if err != nil {
 		return err
-	}
-
-	body, err := s.codec.Marshal(document)
-	if err != nil {
-		return errors.Wrapf(err, "Failed to marshal document %+v due to error: %+v", document, err)
 	}
 
 	indexName := s.getIndexName(storeType)
@@ -458,11 +461,6 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			// The bulk action
 			index := `{ "index" : { "_index" : "` + s.getIndexName(storeType) + `", "_type" : "logs_or_event" } }`
 
-			// Marshal the document as byte array
-			data, err := s.codec.Marshal(document)
-			if err != nil {
-				return errors.Wrapf(err, "failed to marshal value %+v due to error:%+v", kv.Value, err)
-			}
 			// 6 = len("\n\n\n")
 			estimatedBodySize := len(body) + len(index) + len(data) + 6
 			if estimatedBodySize > s.cfg.maxBulkSize * 1024 {
@@ -473,7 +471,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 
 				body = append(body, index...)
 				body = append(body, "\n"...)
-				body = append(body, data...)
+				body = append(body, document...)
 				body = append(body, "\n"...)
 
 				kvi++;
