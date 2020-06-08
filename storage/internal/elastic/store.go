@@ -111,7 +111,7 @@ func extractStoreTypeAndDeploymentId(k string) (storeType string, deploymentId s
 	return storeType, deploymentId
 }
 
-// Get the JSON tag for this field ignoring error (for internal usage only !)
+// Get the JSON tag for this field (for internal usage only !).
 func getElasticStorageConfigPropertyTag(fn string, tn string) string {
 	t := reflect.TypeOf(elasticStoreConf{})
 	f, found := t.FieldByName(fn)
@@ -122,7 +122,7 @@ func getElasticStorageConfigPropertyTag(fn string, tn string) string {
 	if tv == "" {
 		log.Fatalf("Not able to get field %s's tag %s value on elasticStoreConf struct, there is an issue with this code !", fn, tn)
 	}
-	return f.Tag.Get(tn)
+	return tv
 }
 
 // The configuration of the elastic store is defined regarding default values and store 'properties' dynamic map.
