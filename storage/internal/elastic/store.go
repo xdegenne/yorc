@@ -32,29 +32,34 @@ import (
 	"strconv"
 	"math"
 	"fmt"
+	"reflect"
 )
 
-const es_urls = "es_urls"
+type ElasticStoreConf struct {
+	// The ES cluster urls (array or CSV)
+	esUrls []string 				`json:"es_urls"`
+	// All index used by yorc will be prefixed by this prefix
+	indicePrefix string 			`json:"index_prefix"`
+	// When querying logs and event, we wait this timeout before each request when it returns nothing
+	// (until something is returned or the waitTimeout is reached)
+	esQueryPeriod time.Duration 	`json:"es_query_period"`
+	// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
+	esRefreshTimeout time.Duration 	`json:"es_refresh_wait_timeout"`
+	// This is the maximum size (in kB) of bulk request sent while migrating data
+	maxBulkSize int 				`json:"max_bulk_size"`
+	// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
+	maxBulkCount int 				`json:"max_bulk_count"`
+}
 
-// When querying logs and event, we wait this timeout before each request when it returns nothing (until something is returned or the waitTimeout is reached)
-const es_query_period = "es_query_period"
-var esQueryPeriod = 5 * time.Second
-
-// This timeout is used to wait for more than refresh_interval = 1s when querying logs and events indexes
-const es_refresh_wait_timeout = "es_refresh_wait_timeout"
-var esRefreshTimeout = (5 * time.Second)
-
-// All index used by yorc will be prefixed by this prefix
-const index_prefix = "index_prefix"
-var indicePrefix = "yorc_"
-
-// This is the maximum size (in kB) of bulk request sent while migrating data
-const max_bulk_size = "max_bulk_size"
-var maxBulkSize = 4000
-
-// This is the maximum size (in term of number of documents) of bulk request sent while migrating data
-const max_bulk_count = "max_bulk_count"
-var maxBulkActionsCount = 1000
+func NewDefaultElasticStoreConf() ElasticStoreConf {
+	var cfg ElasticStoreConf
+	cfg.indicePrefix = "yorc_"
+	cfg.esQueryPeriod = 5 * time.Second
+	cfg.esRefreshTimeout = 5 * time.Second
+	cfg.maxBulkSize = 4000
+	cfg.maxBulkCount = 1000
+	return cfg
+}
 
 var indexNameAndTimestampRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/.+\/(.*)`)
 var indexNameAndDeploymentIdRegex = regexp.MustCompile(`(?m)\_yorc\/(\w+)\/?(.+)?\/?`)
@@ -64,6 +69,7 @@ type elasticStore struct {
 	codec encoding.Codec
 	esClient *elasticsearch6.Client
 	clusterId string
+	cfg ElasticStoreConf
 }
 
 type lastIndexResponse struct {
@@ -107,6 +113,54 @@ func ExtractIndexNameAndDeploymentId(k string) (indexName string, deploymentId s
 	return indexName, deploymentId
 }
 
+func GetElasticStorageConfigProperty(fieldName string) string {
+	t := reflect.TypeOf(ElasticStoreConf{})
+	f, _ := t.FieldByName(fieldName)
+	return f.Tag.Get("p")
+}
+
+func GetElasticStoreConfig(storeConfig config.Store) ElasticStoreConf {
+	cfg = NewDefaultElasticStoreConf()
+
+	storeProperties := storeConfig.Properties
+
+	// The ES urls is required
+	k := GetElasticStorageConfigProperty("esUrls")
+	if (storeProperties.IsSet(k)) {
+		cfg.esUrls = storeProperties.GetStringSlice(k)
+		if (cfg.esUrls == nil || len(cfg.esUrls) == 0) {
+			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(k))
+		}
+	} else {
+		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
+	}
+
+	// Define store optionnal configuration
+	k = GetElasticStorageConfigProperty("esQueryPeriod")
+	if (storeProperties.IsSet(k)) {
+		cfg.esQueryPeriod = storeProperties.GetDuration(k)
+	}
+	k = GetElasticStorageConfigProperty("esRefreshTimeout")
+	if (storeProperties.IsSet(k)) {
+		cfg.esRefreshTimeout = storeProperties.GetDuration(k)
+	}
+	k = GetElasticStorageConfigProperty("indicePrefix")
+	if (storeProperties.IsSet(k)) {
+		cfg.indicePrefix = storeProperties.GetString(k)
+	}
+	k = GetElasticStorageConfigProperty("maxBulkSize")
+	if (storeProperties.IsSet(k)) {
+		cfg.maxBulkSize = storeProperties.GetInt(k)
+	}
+	k = GetElasticStorageConfigProperty("maxBulkCount")
+	if (storeProperties.IsSet(k)) {
+		cfg.maxBulkCount = storeProperties.GetInt(k)
+	}
+
+	return cfg
+
+}
+
 // NewStore returns a new Elastic store
 func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 
@@ -118,41 +172,16 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 	}
 
 	// Get specific config from storage properties
-	storeProperties := storeConfig.Properties
+	esCfg := GetElasticStoreConfig(storeConfig)
+
 	var esConfig elasticsearch6.Config
-
-	// The ES urls is required
-	if (storeProperties.IsSet(es_urls)) {
-		elastic_urls := storeProperties.GetStringSlice(es_urls)
-		if (elastic_urls == nil || len(elastic_urls) == 0) {
-			log.Fatalf("Not able to get ES configuration for elastic store, es_urls store property seems empty : %+v", storeProperties.Get(es_urls))
-		}
-		esConfig = elasticsearch6.Config{
-			Addresses: elastic_urls,
-		}
-	} else {
-		log.Fatal("Not able to get ES configuration for elastic store, es_urls store property should be set !")
+	esConfig = elasticsearch6.Config{
+		Addresses: esCfg.esUrls,
 	}
 
-	// Define store optionnal configuration
-	if (storeProperties.IsSet(es_query_period)) {
-		esQueryPeriod = storeProperties.GetDuration(es_query_period)
-	}
-	if (storeProperties.IsSet(es_refresh_wait_timeout)) {
-		esRefreshTimeout = storeProperties.GetDuration(es_refresh_wait_timeout)
-	}
-	if (storeProperties.IsSet(index_prefix)) {
-		indicePrefix = storeProperties.GetString(index_prefix)
-	}
-	if (storeProperties.IsSet(max_bulk_size)) {
-		maxBulkSize = storeProperties.GetInt(max_bulk_size)
-	}
-	if (storeProperties.IsSet(max_bulk_count)) {
-		maxBulkActionsCount = storeProperties.GetInt(max_bulk_count)
-	}
-	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esQueryPeriod, esRefreshTimeout)
-	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", maxBulkActionsCount, maxBulkSize)
-	log.Printf("Index prefix will be %s", indicePrefix)
+	log.Printf("Index prefix will be %s", esCfg.indicePrefix)
+	log.Printf("Will query ES for logs or events every %v and will wait for index refresh during %v", esCfg.esQueryPeriod, esCfg.esRefreshTimeout)
+	log.Printf("While migrating data, the max bulk request size will be %d documents and will never exceed %d kB", esCfg.maxBulkCount, esCfg.maxBulkSize)
 	log.Printf("Will use this ES client configuration: %+v", esConfig)
 
 	esClient, _ := elasticsearch6.NewClient(esConfig)
@@ -165,11 +194,11 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) store.Store {
 		clusterId = cfg.ServerID
 	}
 
-	InitStorageIndices(esClient, indicePrefix + "logs")
-	InitStorageIndices(esClient, indicePrefix + "events")
-	DebugIndexSetting(esClient, indicePrefix + "logs")
-	DebugIndexSetting(esClient, indicePrefix + "events")
-	return &elasticStore{encoding.JSON, esClient, clusterId}
+	InitStorageIndices(esClient, esCfg.indicePrefix + "logs")
+	InitStorageIndices(esClient, esCfg.indicePrefix + "events")
+	DebugIndexSetting(esClient, esCfg.indicePrefix + "logs")
+	DebugIndexSetting(esClient, esCfg.indicePrefix + "events")
+	return &elasticStore{encoding.JSON, esClient, clusterId, esCfg}
 }
 
 func InitStorageIndices(esClient *elasticsearch6.Client, indiceName string) {
@@ -363,8 +392,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		return nil
 	}
 
-	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(maxBulkActionsCount))))
-	log.Printf("max_bulk_size is %d, so a minimum of %d iterations will be necessary to bulk index the %d documents", maxBulkActionsCount, iterationCount, totalDocumentCount)
+	iterationCount := int(math.Ceil((float64(totalDocumentCount) / float64(s.cfg.maxBulkCount))))
+	log.Printf("max_bulk_count is %d, so a minimum of %d iterations will be necessary to bulk index the %d documents", s.cfg.maxBulkCount, iterationCount, totalDocumentCount)
 
 	// The current index in []keyValues (also the number of documents indexed)
 	var kvi int = 0
@@ -379,7 +408,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		body := make([]byte, 0)
 		bulkActionCount := 0
 		for {
-			if kvi == totalDocumentCount || bulkActionCount == maxBulkActionsCount {
+			if kvi == totalDocumentCount || bulkActionCount == s.cfg.maxBulkCount {
 				break
 			}
 
@@ -403,8 +432,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			}
 			// 6 = len("\n\n\n")
 			estimatedBodySize := len(body) + len(index) + len(data) + 6
-			if estimatedBodySize > maxBulkSize * 1024 {
-				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", maxBulkSize, estimatedBodySize, maxBulkSize * 1024)
+			if estimatedBodySize > s.cfg.maxBulkSize * 1024 {
+				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", s.cfg.maxBulkSize, estimatedBodySize, s.cfg.maxBulkSize * 1024)
 				break
 			} else {
 				log.Debugf("Document built from key %s added to bulk request body, indexName was %s", kv.Key, indexName)
@@ -595,8 +624,8 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	query := GetListQuery(s.clusterId, deploymentId, waitIndex, 0)
 
 	now := time.Now()
-	end := now.Add(timeout - esRefreshTimeout)
-	log.Debugf("Now is : %v, date after timeout will be %v (ES timeout duration will be %v)", now, end, timeout - esRefreshTimeout)
+	end := now.Add(timeout - s.cfg.esRefreshTimeout)
+	log.Debugf("Now is : %v, date after timeout will be %v (ES timeout duration will be %v)", now, end, timeout - s.cfg.esRefreshTimeout)
 	var values = make([]store.KeyValueOut, 0)
 	var lastIndex = waitIndex
 	var hits = 0
@@ -611,8 +640,8 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		if hits > 0 || now.After(end) {
 			break
 		}
-		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, esQueryPeriod)
-		time.Sleep(esQueryPeriod)
+		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, s.cfg.esQueryPeriod)
+		time.Sleep(s.cfg.esQueryPeriod)
 	}
 	if (hits > 0) {
 		// we do have something to retrieve, we will just wait esRefreshTimeout to let any document that has just been stored to be indexed
@@ -620,14 +649,14 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		query := GetListQuery(s.clusterId, deploymentId, waitIndex, lastIndex)
 		// force refresh for this index
 		RefreshIndex(s.esClient, GetIndexName(indexName));
-		time.Sleep(esRefreshTimeout)
+		time.Sleep(s.cfg.esRefreshTimeout)
 		oldHits := hits
 		hits, values, lastIndex, err = s.DoQueryEs(GetIndexName(indexName), query, waitIndex, 10000, "asc");
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh), error was: %+v", err)
 		}
 		if hits > oldHits {
-			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, esRefreshTimeout, GetIndexName(indexName), len(values))
+			log.Printf("%d > %d so sleeping %v to wait for ES refresh was usefull (index %s), %d documents has been fetched", hits, oldHits, s.cfg.esRefreshTimeout, GetIndexName(indexName), len(values))
 		}
 	}
 	log.Debugf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d" , k, waitIndex, timeout, lastIndex, len(values))
