@@ -462,7 +462,7 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		if kvi == totalDocumentCount {
 			break
 		}
-		fmt.Printf("Bulk iteration #%d", i)
+		fmt.Printf("Bulk iteration %d", i)
 
 		maxBulkSizeInBytes := s.cfg.maxBulkSize * 1024
 		body := make([]byte, maxBulkSizeInBytes)
@@ -481,19 +481,21 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 			if err != nil {
 				return err
 			}
+			log.Debugf("About to add a document of size %d bytes to bulk request", len(document))
 
 			// The bulk action
 			index := `{"index":{"_index":"` + s.getIndexName(storeType) + `","_type":"logs_or_event"}}`
-			bulkOperation := make([]byte, len(index)+len(document)+6)
+			bulkOperation := make([]byte, len(index) + len(document) +2)
 			bulkOperation = append(bulkOperation, index...)
 			bulkOperation = append(bulkOperation, "\n"...)
 			bulkOperation = append(bulkOperation, document...)
 			bulkOperation = append(bulkOperation, "\n"...)
+			log.Debugf("About to add a bulk operation of size %d bytes to bulk request, current size of bulk request body is %d bytes", len(bulkOperation), len(body))
 
-			// 1 = len("\n") the last newline that will append to terminate the bulk request
+			// 1 = len("\n") the last newline that will be appended to terminate the bulk request
 			estimatedBodySize := len(body) + len(bulkOperation) + 1
-			if len(bulkOperation) > maxBulkSizeInBytes {
-				return errors.Errorf("A bulk operation size (order + document %s) is greater than the maximum bulk size authorized (%dkB) : %d > %d, this document can't be sent to ES, please adapt your configuration !", kv.Key, s.cfg.maxBulkSize, len(bulkOperation), maxBulkSizeInBytes)
+			if len(bulkOperation) + 1 > maxBulkSizeInBytes {
+				return errors.Errorf("A bulk operation size (order + document %s) is greater than the maximum bulk size authorized (%dkB) : %d > %d, this document can't be sent to ES, please adapt your configuration !", kv.Key, s.cfg.maxBulkSize, len(bulkOperation) + 1, maxBulkSizeInBytes)
 			}
 			if estimatedBodySize > maxBulkSizeInBytes {
 				log.Printf("The limit of bulk size (%d kB) will be reached (%d > %d), the current document will be sent in the next bulk request", s.cfg.maxBulkSize, estimatedBodySize, maxBulkSizeInBytes)
