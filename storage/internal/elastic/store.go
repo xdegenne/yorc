@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package elastic provides an implementation of a storage that index and get documents from Elasticsearch 6.x.
+// Package elastic provides an implementation of a storage that index/get documents to/from Elasticsearch 6.x.
+// This store can only manage logs and events for the moment. It will fail if you try to use it for other store types.
 package elastic
 
 import (
