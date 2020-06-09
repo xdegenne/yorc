@@ -485,7 +485,8 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 
 			// The bulk action
 			index := `{"index":{"_index":"` + s.getIndexName(storeType) + `","_type":"logs_or_event"}}`
-			bulkOperation := make([]byte, 0)
+			// 2 = len("\n\n")
+			bulkOperation := make([]byte, len(index) + len(document) + 2)
 			bulkOperation = append(bulkOperation, index...)
 			bulkOperation = append(bulkOperation, "\n"...)
 			bulkOperation = append(bulkOperation, document...)
