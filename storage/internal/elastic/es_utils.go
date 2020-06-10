@@ -23,8 +23,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/ystia/yorc/v4/log"
 	"github.com/ystia/yorc/v4/storage/store"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"strings"
+	"time"
 )
 
 var pfalse = false
@@ -49,9 +52,8 @@ type stringValue struct {
 
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
 	var esConfig elasticsearch6.Config
-	esConfig = elasticsearch6.Config{
-		Addresses: elasticStoreConfig.esUrls,
-	}
+
+	esConfig = elasticsearch6.Config{ Addresses: elasticStoreConfig.esUrls }
 
 	if len(elasticStoreConfig.caCertPath) > 0 {
 		log.Printf("Reading CACert file from %s", elasticStoreConfig.caCertPath)
@@ -60,6 +62,9 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 			return nil, errors.Wrapf(err, "Not able to read Cert file from <%s>", elasticStoreConfig.caCertPath)
 		}
 		esConfig.CACert = cert
+	}
+	if true || log.IsDebug() {
+		esConfig.Logger = &CustomLogger{}
 	}
 
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
@@ -299,5 +304,49 @@ func closeResponseBody(requestDescription string, res *esapi.Response) {
 	if err != nil {
 		log.Printf("[%s] Was not able to close resource response body, error was: %+v", requestDescription, err)
 	}
+}
+
+type CustomLogger struct {
+
+}
+// RequestBodyEnabled makes the client pass request body to logger
+func (l *CustomLogger) RequestBodyEnabled() bool { return true }
+// RequestBodyEnabled makes the client pass response body to logger
+func (l *CustomLogger) ResponseBodyEnabled() bool { return true }
+func (l *CustomLogger) LogRoundTrip(
+	req *http.Request,
+	res *http.Response,
+	err error,
+	start time.Time,
+	dur time.Duration,
+) error {
+
+	var level string
+	switch {
+	case err != nil:
+		level = "Exception"
+	case res != nil && res.StatusCode > 0 && res.StatusCode < 300:
+		level = "Success"
+	case res != nil && res.StatusCode > 299 && res.StatusCode < 500:
+		level = "Warn"
+	case res != nil && res.StatusCode > 499:
+		level = "Error"
+	default:
+		level = "Unknown"
+	}
+
+	var reqBuffer, resBuffer bytes.Buffer
+	if req != nil && req.Body != nil && req.Body != http.NoBody {
+		_, _ = io.Copy(&reqBuffer, req.Body)
+	}
+	reqStr := reqBuffer.String()
+	if res != nil && res.Body != nil && res.Body != http.NoBody {
+		_, _ = io.Copy(&resBuffer, res.Body)
+	}
+	resStr := resBuffer.String()
+	log.Printf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
+		level, start, req.Method, req.URL.String(), res.StatusCode, dur, reqStr, resStr)
+
+	return nil
 }
 
