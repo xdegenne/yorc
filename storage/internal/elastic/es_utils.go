@@ -63,7 +63,8 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 		}
 		esConfig.CACert = cert
 	}
-	if true || log.IsDebug() {
+	if log.IsDebug() {
+		// In debug mode we add a custom logger
 		esConfig.Logger = &CustomLogger{}
 	}
 
