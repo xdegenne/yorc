@@ -379,7 +379,9 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 
 	var lastIndexF float64
 	docCount := r.aggregations.logsOrEvents.docCount
+	log.Printf("Here is the value of docCount: %d", docCount)
 	if docCount > 0 {
+		log.Printf("Here is the value of last_index: %e", r.aggregations.logsOrEvents.lastIndex.value)
 		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
 	if (lastIndexF != float64(iid)) {
