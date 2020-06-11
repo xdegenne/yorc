@@ -247,7 +247,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 
 	hits := r.hits.total
 	if hits > 0 {
-		lastIndex = r.aggregations.logsOrEvents.lastIndex.value
+		//lastIndex = r.aggregations.logsOrEvents.lastIndex.value
 	}
 
 	log.Debugf(
