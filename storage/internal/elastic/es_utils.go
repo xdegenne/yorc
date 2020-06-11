@@ -381,7 +381,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
 	if (lastIndexF != float64(iid)) {
-		return errors.Errorf("float64(iid): %d and lastIndexF: %d don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
+		return errors.Errorf("float64(iid): %e and lastIndexF: %e don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
 	}
 	log.Printf("float64(iid): %e and lastIndexF: %e do match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
 	return nil
