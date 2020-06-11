@@ -91,8 +91,8 @@ func getRangeQuery(waitIndex uint64, maxIndex uint64) (rangeQuery string) {
             {
                "range":{
                   "iid":{
-                     "gt": ` + getSortableStringFromUint64(waitIndex) + `,
-					 "lte": ` + getSortableStringFromUint64(maxIndex) + `
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `",
+					 "lte": "` + getSortableStringFromUint64(maxIndex) + `"
                   }
                }
             }`
@@ -101,7 +101,7 @@ func getRangeQuery(waitIndex uint64, maxIndex uint64) (rangeQuery string) {
             {
                "range":{
                   "iid":{
-                     "gt": ` + getSortableStringFromUint64(waitIndex) + `
+                     "gt": "` + getSortableStringFromUint64(waitIndex) + `"
                   }
                }
             }`
