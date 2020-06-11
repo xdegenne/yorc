@@ -214,6 +214,7 @@ func doQueryEs(c *elasticsearch6.Client,
 
 // Decode the response and define the last index
 func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[string]interface{}, values *[]store.KeyValueOut) (lastIndex uint64) {
+	lastIndex = waitIndex
 	// Print the ID and document source for each hit.
 	i := 0
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
