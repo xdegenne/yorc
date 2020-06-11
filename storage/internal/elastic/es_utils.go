@@ -51,6 +51,10 @@ type stringValue struct {
 	value string `json:"value"`
 }
 
+type countResponse struct {
+	count int `json:"count"`
+}
+
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 
@@ -124,23 +128,23 @@ func initStorageIndex(c *elasticsearch6.Client, elasticStoreConfig elasticStoreC
 		}
 		res, err := req.Do(context.Background(), c)
 		defer closeResponseBody("IndicesCreateRequest:"+indexName, res)
-		err = handleESResponseError(res, "IndicesCreateRequest:"+indexName, requestBodyData, err)
-		if err != nil {
+		if err = handleESResponseError(res, "IndicesCreateRequest:"+indexName, requestBodyData, err); err != nil {
 			return err
 		}
-		// Initialize a first document
-		initDoc := `{"clusterId":"` + elasticStoreConfig.clusterID + `","iid":"` + getSortableStringFromUint64(0) + `"}`
-		reqDoc := esapi.IndexRequest{
-			Index:        indexName,
-			DocumentType: "logs_or_event",
-			Body:         strings.NewReader(initDoc),
-		}
-		res, err = reqDoc.Do(context.Background(), c)
-		defer closeResponseBody("IndexRequest:"+indexName, res)
-		return handleESResponseError(res, "IndexRequest:"+indexName, initDoc, err)
+		//// Initialize a first document
+		//initDoc := `{"clusterId":"` + elasticStoreConfig.clusterID + `","iid":"` + getSortableStringFromUint64(0) + `"}`
+		//reqDoc := esapi.IndexRequest{
+		//	Index:        indexName,
+		//	DocumentType: "logs_or_event",
+		//	Body:         strings.NewReader(initDoc),
+		//}
+		//res, err = reqDoc.Do(context.Background(), c)
+		//defer closeResponseBody("IndexRequest:"+indexName, res)
+		//return handleESResponseError(res, "IndexRequest:"+indexName, initDoc, err)
 	} else {
 		return handleESResponseError(res, "IndicesExistsRequest:"+indexName, "", err)
 	}
+	return nil
 }
 
 // Perform a refresh query on ES cluster for this particular index.

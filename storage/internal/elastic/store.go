@@ -213,24 +213,39 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	query := buildLastModifiedIndexQuery(s.cfg.clusterID, deploymentID)
 	log.Debugf("buildLastModifiedIndexQuery is : %s", query)
 
-	res, err := s.esClient.Search(
+	// If don't have any document, do nothing
+	resCount, e := s.esClient.Count(s.esClient.Count.WithIndex(indexName), s.esClient.Count.WithDocumentType("logs_or_event"))
+	defer closeResponseBody("Count"+indexName, resCount)
+	e = handleESResponseError(resCount, "Count"+indexName, "", e)
+	if e != nil {
+		return
+	}
+	var respCount countResponse
+	if e = json.NewDecoder(resCount.Body).Decode(&respCount); e != nil {
+		return
+	}
+	if respCount.count == 0 {
+		return 0, nil
+	}
+
+	resSearch, err := s.esClient.Search(
 		s.esClient.Search.WithContext(context.Background()),
 		s.esClient.Search.WithIndex(indexName),
 		s.esClient.Search.WithSize(0),
 		s.esClient.Search.WithBody(strings.NewReader(query)),
 	)
-	defer closeResponseBody("LastModifiedIndexQuery for "+k, res)
-	e = handleESResponseError(res, "LastModifiedIndexQuery for "+k, query, err)
+	defer closeResponseBody("LastModifiedIndexQuery for "+k, resSearch)
+	e = handleESResponseError(resSearch, "LastModifiedIndexQuery for "+k, query, err)
 	if e != nil {
 		return
 	}
 
 	var r lastIndexResponse
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+	if err := json.NewDecoder(resSearch.Body).Decode(&r); err != nil {
 		e = errors.Wrapf(
 			err,
 			"Not able to parse response body after LastModifiedIndexQuery was sent for key %s, status was %s, query was: %s",
-			k, res.Status(), query,
+			k, resSearch.Status(), query,
 		)
 		return
 	}
@@ -242,7 +257,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 
 	log.Debugf(
 		"Successfully executed LastModifiedIndexQuery request for key %s ! status: %s, hits: %d; lastIndex: %d",
-		k, res.Status(), hits, lastIndex,
+		k, resSearch.Status(), hits, lastIndex,
 	)
 
 	return lastIndex, nil
