@@ -230,8 +230,8 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		s.esClient.Search.WithSize(0),
 		s.esClient.Search.WithBody(strings.NewReader(query)),
 	)
-	defer closeResponseBody("LastModifiedIndexQuery for " + k, res)
-	e = handleESResponseError(res, "LastModifiedIndexQuery for " + k, query, err)
+	defer closeResponseBody("LastModifiedIndexQuery for "+k, res)
+	e = handleESResponseError(res, "LastModifiedIndexQuery for "+k, query, err)
 	if e != nil {
 		return
 	}
@@ -249,14 +249,6 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	hits := r.hits.total
 	if hits > 0 {
 		lastIndex = r.aggregations.logsOrEvents.lastIndex.value
-		//if err != nil {
-		//	e = errors.Wrapf(
-		//		err,
-		//		"Not able to parse value after LastModifiedIndexQuery was sent for key %s, status was %s, query was: %s, decoded response was %+v",
-		//		k, res.Status(), query, r,
-		//	)
-		//	return
-		//}
 	}
 
 	log.Debugf(
@@ -304,7 +296,6 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 			break
 		}
 		log.Debugf("hits is %d and timeout not reached, sleeping %v ...", hits, s.cfg.esQueryPeriod)
-		// TODO Use a ticker
 		time.Sleep(s.cfg.esQueryPeriod)
 	}
 	if hits > 0 {
@@ -328,7 +319,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		}
 	}
 	log.Debugf("List called result k: %s, waitIndex: %d, timeout: %v, LastIndex: %d, len(values): %d",
-		k, waitIndex, timeout, lastIndex, len(values),)
+		k, waitIndex, timeout, lastIndex, len(values))
 	return values, lastIndex, err
 }
 

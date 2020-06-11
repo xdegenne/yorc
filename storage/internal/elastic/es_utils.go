@@ -53,7 +53,7 @@ type uintValue struct {
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
 	var esConfig elasticsearch6.Config
 
-	esConfig = elasticsearch6.Config{ Addresses: elasticStoreConfig.esUrls }
+	esConfig = elasticsearch6.Config{Addresses: elasticStoreConfig.esUrls}
 
 	if len(elasticStoreConfig.caCertPath) > 0 {
 		log.Printf("Reading CACert file from %s", elasticStoreConfig.caCertPath)
@@ -65,7 +65,7 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 	}
 	if log.IsDebug() {
 		// In debug mode we add a custom logger
-		esConfig.Logger = &CustomLogger{}
+		esConfig.Logger = &debugLogger{}
 	}
 
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
@@ -132,23 +132,12 @@ func refreshIndex(c *elasticsearch6.Client, indexName string) {
 		ExpandWildcards: "none",
 		AllowNoIndices:  &pfalse,
 	}
-	// TODO: handle refresh index ?
-	res, _ := req.Do(context.Background(), c)
+	res, err := req.Do(context.Background(), c)
+	err = handleESResponseError(res, "IndicesRefreshRequest:"+indexName, "", err)
+	if err != nil {
+		log.Println("AN error occured while refreshing index, due to : %+v", err)
+	}
 	defer closeResponseBody("IndicesRefreshRequest:"+indexName, res)
-}
-
-// Just to display index settings at startup.
-func debugIndexSetting(c *elasticsearch6.Client, indexName string) {
-	if !log.IsDebug() {
-		return
-	}
-	log.Debugf("Get settings for index <%s>", indexName)
-	req := esapi.IndicesGetSettingsRequest{
-		Index:  []string{indexName},
-		Pretty: true,
-	}
-	res, _ := req.Do(context.Background(), c)
-	defer closeResponseBody("IndicesGetSettingsRequest:"+indexName, res)
 }
 
 // Query ES for events or logs specifying the expected results 'size' and the sort 'order'.
@@ -175,9 +164,9 @@ func doQueryEs(c *elasticsearch6.Client,
 		err = errors.Wrapf(err, "Failed to perform ES search on index %s, query was: <%s>, error was: %+v", index, query, err)
 		return
 	}
-	defer closeResponseBody("Search:" + index, res)
+	defer closeResponseBody("Search:"+index, res)
 
-	err = handleESResponseError(res, "Search:" + index, query, e)
+	err = handleESResponseError(res, "Search:"+index, query, e)
 	if err != nil {
 		return
 	}
@@ -289,14 +278,16 @@ func closeResponseBody(requestDescription string, res *esapi.Response) {
 	}
 }
 
-type CustomLogger struct {
+type debugLogger struct{}
 
-}
 // RequestBodyEnabled makes the client pass request body to logger
-func (l *CustomLogger) RequestBodyEnabled() bool { return true }
-// RequestBodyEnabled makes the client pass response body to logger
-func (l *CustomLogger) ResponseBodyEnabled() bool { return true }
-func (l *CustomLogger) LogRoundTrip(
+func (l *debugLogger) RequestBodyEnabled() bool { return true }
+
+// ResponseBodyEnabled makes the client pass response body to logger
+func (l *debugLogger) ResponseBodyEnabled() bool { return true }
+
+// LogRoundTrip will use log to debug ES request and response (when debug is activated)
+func (l *debugLogger) LogRoundTrip(
 	req *http.Request,
 	res *http.Response,
 	err error,
@@ -320,16 +311,17 @@ func (l *CustomLogger) LogRoundTrip(
 
 	var reqBuffer, resBuffer bytes.Buffer
 	if req != nil && req.Body != nil && req.Body != http.NoBody {
+		// We explicitly ignore errors here since it's a debug feature
 		_, _ = io.Copy(&reqBuffer, req.Body)
 	}
 	reqStr := reqBuffer.String()
 	if res != nil && res.Body != nil && res.Body != http.NoBody {
+		// We explicitly ignore errors here since it's a debug feature
 		_, _ = io.Copy(&resBuffer, res.Body)
 	}
 	resStr := resBuffer.String()
-	log.Printf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
+	log.Debugf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
 		level, start, req.Method, req.URL.String(), res.StatusCode, dur, reqStr, resStr)
 
 	return nil
 }
-
