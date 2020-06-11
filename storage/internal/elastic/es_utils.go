@@ -206,14 +206,14 @@ func doQueryEs(c *elasticsearch6.Client,
 	duration := int(r["took"].(float64))
 	log.Debugf("Search ES request on index %s took %dms, hits=%d, response code was %d (%s)", index, duration, hits, res.StatusCode, res.Status())
 
-	lastIndex = decodeEsQueryResponse(r, &values)
+	lastIndex = decodeEsQueryResponse(index, waitIndex, r, &values)
 
 	log.Debugf("doQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
 }
 
 // Decode the response and define the last index
-func decodeEsQueryResponse(r map[string]interface{}, values *[]store.KeyValueOut) (lastIndex uint64) {
+func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[string]interface{}, values *[]store.KeyValueOut) (lastIndex uint64) {
 	// Print the ID and document source for each hit.
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
@@ -229,6 +229,7 @@ func decodeEsQueryResponse(r map[string]interface{}, values *[]store.KeyValueOut
 			} else {
 				// since the result is sorted on iid, we can use the last hit to define lastIndex
 				lastIndex = iidInt64
+				log.Printf("ESList-%s;%d,%d,%s,%d,%d", index, waitIndex, size, iid, iidInt64, lastIndex)
 				// append value to result
 				*values = append(*values, store.KeyValueOut{
 					Key:             id,
