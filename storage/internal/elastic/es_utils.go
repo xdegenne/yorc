@@ -46,6 +46,8 @@ type logOrEventAggregation struct {
 }
 type lastIndexAggregation struct {
 	lastIndex uintValue `json:"last_index"`
+	docCount int64 `json:"doc_count"`
+
 }
 type uintValue struct {
 	value float64 `json:"value"`
@@ -376,8 +378,8 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	}
 
 	var lastIndexF float64
-	hits := r.hits.total
-	if hits > 0 {
+	docCount := r.aggregations.logsOrEvents.docCount
+	if docCount > 0 {
 		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
 	if (lastIndexF != float64(iid)) {
