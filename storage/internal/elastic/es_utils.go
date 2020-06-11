@@ -336,7 +336,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	var iid int64 = 1591271005841389857
 	iidStr := strconv.FormatInt(iid, 10)
 
-	message := `{"iid": ` + iidStr +`, "iid_str": "` + iidStr +`", "cluster_id": "` + clusterID +`"}`
+	message := `{"iid": ` + iidStr +`, "iid_str": "` + iidStr +`", "clusterId": "` + clusterID +`"}`
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
