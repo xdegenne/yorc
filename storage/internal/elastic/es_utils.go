@@ -163,7 +163,7 @@ func refreshIndex(c *elasticsearch6.Client, indexName string) {
 }
 
 // Query ES for events or logs specifying the expected results 'size' and the sort 'order'.
-func doQueryEs(c *elasticsearch6.Client,
+func doQueryEs(c *elasticsearch6.Client, conf elasticStoreConf,
 	index string,
 	query string,
 	waitIndex uint64,
@@ -206,14 +206,14 @@ func doQueryEs(c *elasticsearch6.Client,
 	duration := int(r["took"].(float64))
 	log.Debugf("Search ES request on index %s took %dms, hits=%d, response code was %d (%s)", index, duration, hits, res.StatusCode, res.Status())
 
-	lastIndex = decodeEsQueryResponse(index, waitIndex, size, r, &values)
+	lastIndex = decodeEsQueryResponse(conf, index, waitIndex, size, r, &values)
 
 	log.Debugf("doQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
 }
 
 // Decode the response and define the last index
-func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[string]interface{}, values *[]store.KeyValueOut) (lastIndex uint64) {
+func decodeEsQueryResponse(conf elasticStoreConf, index string, waitIndex uint64, size int, r map[string]interface{}, values *[]store.KeyValueOut) (lastIndex uint64) {
 	lastIndex = waitIndex
 	// Print the ID and document source for each hit.
 	i := 0
@@ -231,12 +231,14 @@ func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[strin
 			} else {
 				// since the result is sorted on iid, we can use the last hit to define lastIndex
 				lastIndex = iidUInt64
-				i++
-				waitTimestamp := _getTimestampFromUint64(waitIndex)
-				iidInt64 := _parseInt64StringToInt64(iid.(string))
-				iidTimestamp := time.Unix(0, iidInt64)
-				log.Printf("ESList-%s;%d,%v,%d,%d,%s,%v,%d,%d",
-					index, waitIndex, waitTimestamp, size, i, iid, iidTimestamp, iidInt64, lastIndex)
+				if conf.traceEvents {
+					i++
+					waitTimestamp := _getTimestampFromUint64(waitIndex)
+					iidInt64 := _parseInt64StringToInt64(iid.(string))
+					iidTimestamp := time.Unix(0, iidInt64)
+					log.Printf("ESList-%s;%d,%v,%d,%d,%s,%v,%d,%d",
+						index, waitIndex, waitTimestamp, size, i, iid, iidTimestamp, iidInt64, lastIndex)
+				}
 				// append value to result
 				*values = append(*values, store.KeyValueOut{
 					Key:             id,

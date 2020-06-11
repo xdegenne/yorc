@@ -96,7 +96,7 @@ func parseInt64StringToUint64(value string) (uint64, error) {
 	return result, nil
 }
 
-func _getTimestampFromUint64(nanoTimestamp uint64) time.Time  {
+func _getTimestampFromUint64(nanoTimestamp uint64) time.Time {
 	nanoTimestampStr := strconv.FormatUint(nanoTimestamp, 10)
 	ts := _parseInt64StringToInt64(nanoTimestampStr)
 	return time.Unix(0, ts)

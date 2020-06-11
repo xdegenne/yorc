@@ -291,7 +291,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = doQueryEs(s.esClient, indexName, query, waitIndex, 1, "desc")
+		hits, values, lastIndex, err = doQueryEs(s.esClient, s.cfg, indexName, query, waitIndex, 1, "desc")
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -312,7 +312,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		}
 		time.Sleep(s.cfg.esRefreshWaitTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = doQueryEs(s.esClient, indexName, query, waitIndex, 10000, "asc")
+		hits, values, lastIndex, err = doQueryEs(s.esClient, s.cfg, indexName, query, waitIndex, 10000, "asc")
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh)")
 		}
