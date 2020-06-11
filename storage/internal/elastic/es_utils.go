@@ -220,7 +220,7 @@ func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[strin
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
 		iid := source["iid"]
-		iidInt64, err := parseInt64StringToUint64(iid.(string))
+		iidUInt64, err := parseInt64StringToUint64(iid.(string))
 		if err != nil {
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source)
 		} else {
@@ -229,14 +229,17 @@ func decodeEsQueryResponse(index string, waitIndex uint64, size int, r map[strin
 				log.Printf("Not able to marshall document source, document id: %s, source: %+v, ignoring this document !", id, source)
 			} else {
 				// since the result is sorted on iid, we can use the last hit to define lastIndex
-				lastIndex = iidInt64
+				lastIndex = iidUInt64
 				i++
-				log.Printf("ESList-%s;%d,%d,%d,%s,%d,%d",
-					index, waitIndex, size, i, iid, iidInt64, lastIndex)
+				waitTimestamp := _getTimestampFromUint64(waitIndex)
+				iidInt64 := _parseInt64StringToInt64(iid.(string))
+				iidTimestamp := time.Unix(0, iidInt64)
+				log.Printf("ESList-%s;%d,%v,%d,%d,%s,%v,%d,%d",
+					index, waitIndex, waitTimestamp, size, i, iid, iidTimestamp, iidInt64, lastIndex)
 				// append value to result
 				*values = append(*values, store.KeyValueOut{
 					Key:             id,
-					LastModifyIndex: iidInt64,
+					LastModifyIndex: iidUInt64,
 					Value:           source,
 					RawValue:        jsonString,
 				})
