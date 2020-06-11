@@ -26,7 +26,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -72,6 +71,7 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 	log.Printf("\t- Index prefix will be %s", elasticStoreConfig.indicePrefix)
+	log.Printf("\t- Documents will be segregated by clusterId : %s", elasticStoreConfig.clusterID)
 	log.Printf("\t- Will query ES for logs or events every %v and will wait for index refresh during %v",
 		elasticStoreConfig.esQueryPeriod, elasticStoreConfig.esRefreshWaitTimeout)
 	willRefresh := ""
@@ -330,62 +330,3 @@ func (l *debugLogger) LogRoundTrip(
 	return nil
 }
 
-func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf, clusterID string) error {
-	initStorageIndex(c, elasticStoreConfig, "test_iid")
-	indexName := getIndexName(elasticStoreConfig, "test_iid")
-
-	var iid int64 = 1591271005841389857
-	iidStr := strconv.FormatInt(iid, 10)
-
-	message := `{"iid": "` + iidStr + `", "clusterId": "` + clusterID + `"}`
-
-	// Prepare ES request
-	req := esapi.IndexRequest{
-		Index:        indexName,
-		DocumentType: "logs_or_event",
-		Body:         strings.NewReader(message),
-	}
-	res, err := req.Do(context.Background(), c)
-	defer closeResponseBody("IndexRequest:"+indexName, res)
-	err = handleESResponseError(res, "IndexRequest:"+indexName, message, err)
-	if err != nil {
-		return err
-	}
-
-	query := buildLastModifiedIndexQuery(clusterID, "")
-
-	res, err = c.Search(
-		c.Search.WithContext(context.Background()),
-		c.Search.WithIndex(indexName),
-		c.Search.WithSize(0),
-		c.Search.WithBody(strings.NewReader(query)),
-	)
-	defer closeResponseBody("LastModifiedIndexQuery for ", res)
-	err = handleESResponseError(res, "LastModifiedIndexQuery for ", query, err)
-	if err != nil {
-		return err
-	}
-
-	var r lastIndexResponse
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		e := errors.Wrapf(
-			err,
-			"Not able to parse response body after LastModifiedIndexQuery was sent for key %s, status was %s, query was: %s",
-			"myTest", res.Status(), query,
-		)
-		return e
-	}
-
-	var lastIndexF float64
-	docCount := r.aggregations.logsOrEvents.docCount
-	log.Printf("Here is the value of docCount: %d", docCount)
-	log.Printf("Here is the value of last_index: %e", r.aggregations.logsOrEvents.lastIndex.value)
-	if docCount > 0 {
-		//lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
-	}
-	if lastIndexF != float64(iid) {
-		return errors.Errorf("float64(iid): %e and lastIndexF: %e don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
-	}
-	log.Printf("float64(iid): %e and lastIndexF: %e do match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
-	return nil
-}
