@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
+	"github.com/olivere/elastic/v6"
 	"github.com/pkg/errors"
 	"github.com/ystia/yorc/v4/log"
 	"github.com/ystia/yorc/v4/storage/store"
@@ -55,7 +56,7 @@ type countResponse struct {
 	count int `json:"count"`
 }
 
-func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
+func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elastic.Client, error) {
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 
 	var esConfig elasticsearch6.Config
@@ -88,63 +89,41 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 		elasticStoreConfig.maxBulkCount, elasticStoreConfig.maxBulkSize)
 	log.Printf("\t- Will use this ES client configuration: %+v", esConfig)
 
-	esClient, e := elasticsearch6.NewClient(esConfig)
-	log.Printf("Here is the ES cluster info")
-	log.Println(esClient.Info())
-	return esClient, e
+	client, e := elastic.NewClient(
+		elastic.SetURL(elasticStoreConfig.esUrls...),
+	)
+	// TODO info cluster
+	//esClient, e := elasticsearch6.NewClient(esConfig)
+	//log.Printf("Here is the ES cluster info")
+	//log.Println(esClient.Info())
+	return client, e
 }
 
 // Init ES index for logs or events storage: create it if not found.
-func initStorageIndex(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf, storeType string) error {
+func initStorageIndex(client *elastic.Client, elasticStoreConfig elasticStoreConf, storeType string) error {
+
+	ctx := context.Background()
 
 	indexName := getIndexName(elasticStoreConfig, storeType)
 	log.Printf("Checking if index <%s> already exists", indexName)
 
-	// check if the sequences index exists
-	req := esapi.IndicesExistsRequest{
-		Index:           []string{indexName},
-		ExpandWildcards: "none",
-		AllowNoIndices:  &pfalse,
-	}
-	res, err := req.Do(context.Background(), c)
-	defer closeResponseBody("IndicesExistsRequest:"+indexName, res)
-
+	exists, err :=client.IndexExists(indexName).Do(ctx)
 	if err != nil {
 		return err
 	}
 
-	if res.StatusCode == 200 {
-		log.Printf("Indice %s was found, nothing to do !", indexName)
-		return nil
-	} else if res.StatusCode == 404 {
-		log.Printf("Indice %s was not found, let's create it !", indexName)
-
+	if !exists {
 		requestBodyData := buildInitStorageIndexQuery()
-
-		// indice doest not exist, let's create it
-		req := esapi.IndicesCreateRequest{
-			Index: indexName,
-			Body:  strings.NewReader(requestBodyData),
-		}
-		res, err := req.Do(context.Background(), c)
-		defer closeResponseBody("IndicesCreateRequest:"+indexName, res)
-		if err = handleESResponseError(res, "IndicesCreateRequest:"+indexName, requestBodyData, err); err != nil {
+		createIndex, err := client.CreateIndex(indexName).BodyString(requestBodyData).Do(ctx)
+		if err != nil {
 			return err
 		}
-		//// Initialize a first document
-		//initDoc := `{"clusterId":"` + elasticStoreConfig.clusterID + `","iid":"` + getSortableStringFromUint64(0) + `"}`
-		//reqDoc := esapi.IndexRequest{
-		//	Index:        indexName,
-		//	DocumentType: "logs_or_event",
-		//	Body:         strings.NewReader(initDoc),
-		//}
-		//res, err = reqDoc.Do(context.Background(), c)
-		//defer closeResponseBody("IndexRequest:"+indexName, res)
-		//return handleESResponseError(res, "IndexRequest:"+indexName, initDoc, err)
-	} else {
-		return handleESResponseError(res, "IndicesExistsRequest:"+indexName, "", err)
+		if !createIndex.Acknowledged {
+			// TODO: manage error
+		}
 	}
 	return nil
+
 }
 
 // Perform a refresh query on ES cluster for this particular index.

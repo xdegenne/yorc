@@ -16,6 +16,7 @@ package elastic
 
 import (
 	"encoding/json"
+	"github.com/olivere/elastic/v6"
 	"github.com/pkg/errors"
 	"github.com/ystia/yorc/v4/log"
 	"github.com/ystia/yorc/v4/storage/store"
@@ -93,7 +94,7 @@ func getSortableStringFromUint64(nanoTimestamp uint64) string {
 
 // The document is enriched by adding 'clusterId' and 'iid' properties.
 // This addition is done by directly manipulating the []byte in order to avoid costly successive marshal / unmarshal operations.
-func buildElasticDocument(clusterID string, k string, rawMessage interface{}) (string, []byte, error) {
+func buildElasticDocument(clusterID string, k string, rawMessage interface{}) (storeType string, msgObject interface{}, err error) {
 	// Extract indice name and timestamp by parsing the key
 	storeType, timestamp := extractStoreTypeAndTimestamp(k)
 	log.Debugf("storeType is: %s, timestamp: %s", storeType, timestamp)
@@ -101,18 +102,28 @@ func buildElasticDocument(clusterID string, k string, rawMessage interface{}) (s
 	// Convert timestamp to an int64
 	eventDate, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
-		return storeType, nil, errors.Wrapf(err, "failed to parse timestamp %+v as time, error was: %+v", timestamp, err)
+		err = errors.Wrapf(err, "Failed while parsing timestamp %+v, key %s", timestamp, k)
+		return
 	}
 	// Convert to UnixNano int64
 	iid := eventDate.UnixNano()
 
-	// This is the piece of 'JSON' we want to append
-	a := `,"iid":"` + strconv.FormatInt(iid, 10) + `","clusterId":"` + clusterID + `"`
-	// v is a json.RawMessage
 	raw := rawMessage.(json.RawMessage)
-	raw = appendJSONInBytes(raw, []byte(a))
+	err = json.Unmarshal(raw, &msgObject)
+	if err != nil {
+		err = errors.Wrapf(err, "Fail while unmarshaling rawdata for key %s, body: %s", k, string(raw))
+		return
+	}
+	msgMap := msgObject.(map[string]interface{})
+	msgMap["iid"] = strconv.FormatInt(iid, 10)
+	msgMap["clusterId"] = clusterID
+	return
+}
 
-	return storeType, raw, nil
+func prepareBulkableRequest() elastic.BulkIndexRequest {
+	elastic.NewBulkIndexRequest().
+  b = elastic.NewBulkIndexRequest()
+  b.
 }
 
 // An error is returned if :
@@ -120,18 +131,24 @@ func buildElasticDocument(clusterID string, k string, rawMessage interface{}) (s
 // - the size of the resulting bulk operation exceed the maximum authorized for a bulk request
 // The value is not added if it's size + the current body size exceed the maximum authorized for a bulk request.
 // Return a bool indicating if the value has been added to the bulk request body.
-func eventuallyAppendValueToBulkRequest(c elasticStoreConf, clusterID string, body *[]byte, kv store.KeyValueIn, maxBulkSizeInBytes int) (bool, error) {
+func createBulkIndexRequest(c elasticStoreConf, clusterID string, body *[]byte, kv store.KeyValueIn, maxBulkSizeInBytes int) (*elastic.BulkIndexRequest, error) {
+	bulk := elastic.NewBulkIndexRequest()
 	if err := utils.CheckKeyAndValue(kv.Key, kv.Value); err != nil {
-		return false, err
+		return nil, err
 	}
 
 	storeType, document, err := buildElasticDocument(clusterID, kv.Key, kv.Value)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	log.Debugf("About to add a document of size %d bytes to bulk request", len(document))
 
 	// The bulk action
+	bulk := elastic.NewBulkIndexRequest()
+	bulk.Index(getIndexName(c, storeType))
+	bulk.Type("logs_or_event")
+	bulk.
+
 	index := `{"index":{"_index":"` + getIndexName(c, storeType) + `","_type":"logs_or_event"}}`
 	bulkOperation := make([]byte, 0)
 	bulkOperation = append(bulkOperation, index...)

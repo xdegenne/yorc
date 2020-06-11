@@ -23,6 +23,7 @@ import (
 	"fmt"
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
+	"github.com/olivere/elastic/v6"
 	"github.com/pkg/errors"
 	"github.com/ystia/yorc/v4/config"
 	"github.com/ystia/yorc/v4/log"
@@ -35,9 +36,9 @@ import (
 )
 
 type elasticStore struct {
-	codec    encoding.Codec
-	esClient *elasticsearch6.Client
-	cfg      elasticStoreConf
+	codec  encoding.Codec
+	client *elastic.Client
+	cfg    elasticStoreConf
 }
 
 // NewStore returns a new Elastic store.
@@ -93,18 +94,19 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 		log.Debugf("About to index this document into ES index <%s> : %+v", indexName, string(body))
 	}
 
-	// Prepare ES request
-	req := esapi.IndexRequest{
-		Index:        indexName,
-		DocumentType: "logs_or_event",
-		Body:         bytes.NewReader(body),
-	}
-	res, err := req.Do(context.Background(), s.esClient)
-	defer closeResponseBody("IndexRequest:"+indexName, res)
-	if err != nil || res.IsError() {
-		err = handleESResponseError(res, "Index:"+indexName, string(body), err)
+	_, err = s.client.Index().
+		Index(indexName).
+		Type("logs_or_event").
+		BodyString(string(body)).
+		BodyJson(body).
+		Do(ctx)
+
+	// Flush to make sure the documents got written.
+	_, err = s.client.Flush().Index(indexName).Do(ctx)
+	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -163,7 +165,9 @@ func (s *elasticStore) SetCollection(ctx context.Context, keyValues []store.KeyV
 		// The bulk request must be terminated by a newline
 		body = append(body, "\n"...)
 		// Send the request
-		err := sendBulkRequest(s.esClient, opeCount, &body)
+
+		s.client.Bulk().Add()
+		err := sendBulkRequest(s.client, opeCount, &body)
 		if err != nil {
 			return err
 		}
@@ -194,7 +198,7 @@ func (s *elasticStore) Delete(ctx context.Context, k string, recursive bool) err
 		Size:  &MaxInt,
 		Body:  strings.NewReader(query),
 	}
-	res, err := req.Do(context.Background(), s.esClient)
+	res, err := req.Do(context.Background(), s.client)
 	defer closeResponseBody("DeleteByQueryRequest:"+indexName, res)
 	err = handleESResponseError(res, "DeleteByQueryRequest:"+indexName, query, err)
 	return err
@@ -214,7 +218,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	log.Debugf("buildLastModifiedIndexQuery is : %s", query)
 
 	// If don't have any document, do nothing
-	resCount, e := s.esClient.Count(s.esClient.Count.WithIndex(indexName), s.esClient.Count.WithDocumentType("logs_or_event"))
+	resCount, e := s.client.Count(s.client.Count.WithIndex(indexName), s.client.Count.WithDocumentType("logs_or_event"))
 	defer closeResponseBody("Count"+indexName, resCount)
 	e = handleESResponseError(resCount, "Count"+indexName, "", e)
 	if e != nil {
@@ -228,11 +232,11 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		return 0, nil
 	}
 
-	resSearch, err := s.esClient.Search(
-		s.esClient.Search.WithContext(context.Background()),
-		s.esClient.Search.WithIndex(indexName),
-		s.esClient.Search.WithSize(0),
-		s.esClient.Search.WithBody(strings.NewReader(query)),
+	resSearch, err := s.client.Search(
+		s.client.Search.WithContext(context.Background()),
+		s.client.Search.WithIndex(indexName),
+		s.client.Search.WithSize(0),
+		s.client.Search.WithBody(strings.NewReader(query)),
 	)
 	defer closeResponseBody("LastModifiedIndexQuery for "+k, resSearch)
 	e = handleESResponseError(resSearch, "LastModifiedIndexQuery for "+k, query, err)
@@ -291,7 +295,7 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 	var err error
 	for {
 		// first just query to know if they is something to fetch, we just want the max iid (so order desc, size 1)
-		hits, values, lastIndex, err = doQueryEs(s.esClient, indexName, query, waitIndex, 1, "desc")
+		hits, values, lastIndex, err = doQueryEs(s.client, indexName, query, waitIndex, 1, "desc")
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events, error was: %+v", err)
 		}
@@ -308,11 +312,11 @@ func (s *elasticStore) List(ctx context.Context, k string, waitIndex uint64, tim
 		query := getListQuery(s.cfg.clusterID, deploymentID, waitIndex, lastIndex)
 		if s.cfg.esForceRefresh {
 			// force refresh for this index
-			refreshIndex(s.esClient, indexName)
+			refreshIndex(s.client, indexName)
 		}
 		time.Sleep(s.cfg.esRefreshWaitTimeout)
 		oldHits := hits
-		hits, values, lastIndex, err = doQueryEs(s.esClient, indexName, query, waitIndex, 10000, "asc")
+		hits, values, lastIndex, err = doQueryEs(s.client, indexName, query, waitIndex, 10000, "asc")
 		if err != nil {
 			return values, waitIndex, errors.Wrapf(err, "Failed to request ES logs or events (after waiting for refresh)")
 		}
