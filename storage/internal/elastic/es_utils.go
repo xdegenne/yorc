@@ -206,7 +206,7 @@ func doQueryEs(c *elasticsearch6.Client,
 	duration := int(r["took"].(float64))
 	log.Debugf("Search ES request on index %s took %dms, hits=%d, response code was %d (%s)", index, duration, hits, res.StatusCode, res.Status())
 
-	lastIndex = decodeEsQueryResponse(index, waitIndex, r, &values)
+	lastIndex = decodeEsQueryResponse(index, waitIndex, size, r, &values)
 
 	log.Debugf("doQueryEs called result waitIndex: %d, LastIndex: %d, len(values): %d", waitIndex, lastIndex, len(values))
 	return hits, values, lastIndex, nil
