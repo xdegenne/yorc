@@ -45,11 +45,11 @@ type logOrEventAggregation struct {
 	logsOrEvents lastIndexAggregation `json:"logs_or_events"`
 }
 type lastIndexAggregation struct {
-	lastIndex uintValue `json:"last_index"`
-	docCount int `json:"doc_count"`
+	lastIndex stringValue `json:"last_index"`
+	docCount  int         `json:"doc_count"`
 }
-type uintValue struct {
-	value float64 `json:"value"`
+type stringValue struct {
+	value string `json:"value"`
 }
 
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
@@ -200,7 +200,7 @@ func decodeEsQueryResponse(r map[string]interface{}, values *[]store.KeyValueOut
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		iid := source["iid_str"]
+		iid := source["iid"]
 		iidInt64, err := parseInt64StringToUint64(iid.(string))
 		if err != nil {
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source)
@@ -337,7 +337,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	var iid int64 = 1591271005841389857
 	iidStr := strconv.FormatInt(iid, 10)
 
-	message := `{"iid": ` + iidStr +`, "iid_str": "` + iidStr +`", "clusterId": "` + clusterID +`"}`
+	message := `{"iid": ` + iidStr + `, "iid_str": "` + iidStr + `", "clusterId": "` + clusterID + `"}`
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
@@ -383,7 +383,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	if docCount > 0 {
 		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
-	if (lastIndexF != float64(iid)) {
+	if lastIndexF != float64(iid) {
 		return errors.Errorf("float64(iid): %e and lastIndexF: %e don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
 	}
 	log.Printf("float64(iid): %e and lastIndexF: %e do match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
