@@ -329,4 +329,3 @@ func (l *debugLogger) LogRoundTrip(
 
 	return nil
 }
-

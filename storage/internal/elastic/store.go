@@ -35,9 +35,9 @@ import (
 )
 
 type elasticStore struct {
-	codec     encoding.Codec
-	esClient  *elasticsearch6.Client
-	cfg       elasticStoreConf
+	codec    encoding.Codec
+	esClient *elasticsearch6.Client
+	cfg      elasticStoreConf
 }
 
 // NewStore returns a new Elastic store.

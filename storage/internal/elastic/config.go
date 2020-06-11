@@ -95,7 +95,7 @@ func getElasticStoreConfig(yorcConfig config.Configuration, storeConfig config.S
 	}
 	if len(cfg.clusterID) == 0 {
 		e = errors.Errorf("Not able to define clusterID, please check configuration !")
-		return;
+		return
 	}
 	// Define store optional / default configuration
 	t, e = getElasticStorageConfigPropertyTag("caCertPath", "json")
