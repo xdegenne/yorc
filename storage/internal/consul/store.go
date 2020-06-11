@@ -19,7 +19,6 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
 	"github.com/ystia/yorc/v4/helper/consulutil"
-	"github.com/ystia/yorc/v4/log"
 	"github.com/ystia/yorc/v4/storage/encoding"
 	"github.com/ystia/yorc/v4/storage/store"
 	"github.com/ystia/yorc/v4/storage/utils"
@@ -128,7 +127,6 @@ func (c *consulStore) List(ctx context.Context, k string, waitIndex uint64, time
 		if err := c.codec.Unmarshal(kvp.Value, &value); err != nil {
 			return nil, 0, errors.Wrapf(err, "failed to unmarshal stored value: %q", string(kvp.Value))
 		}
-		log.Printf("Adding key <%s>", kvp.Key)
 		if kvp.ModifyIndex > waitIndex {
 			values = append(values, store.KeyValueOut{
 				Key:             kvp.Key,
