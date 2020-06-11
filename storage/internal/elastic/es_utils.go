@@ -337,7 +337,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	var iid int64 = 1591271005841389857
 	iidStr := strconv.FormatInt(iid, 10)
 
-	message := `{"iid": ` + iidStr + `, "iid_str": "` + iidStr + `", "clusterId": "` + clusterID + `"}`
+	message := `{"iid": "` + iidStr + `", "clusterId": "` + clusterID + `"}`
 
 	// Prepare ES request
 	req := esapi.IndexRequest{
@@ -381,7 +381,7 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 	log.Printf("Here is the value of docCount: %d", docCount)
 	log.Printf("Here is the value of last_index: %e", r.aggregations.logsOrEvents.lastIndex.value)
 	if docCount > 0 {
-		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
+		//lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
 	if lastIndexF != float64(iid) {
 		return errors.Errorf("float64(iid): %e and lastIndexF: %e don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)

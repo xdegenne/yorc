@@ -78,10 +78,10 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) (store.Store, 
 	if err != nil {
 		return nil, errors.Wrapf(err, "Not able to init index for eventType <%s>", "events")
 	}
-	err = testIidAsLong(esClient, elasticStoreConfig, clusterID)
-	if err != nil {
-		return nil, err
-	}
+	//err = testIidAsLong(esClient, elasticStoreConfig, clusterID)
+	//if err != nil {
+	//	return nil, err
+	//}
 	return &elasticStore{encoding.JSON, esClient, clusterID, elasticStoreConfig}, nil
 }
 
