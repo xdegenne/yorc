@@ -44,6 +44,8 @@ type elasticStoreConf struct {
 	maxBulkCount int `json:"max_bulk_count" default:"1000"`
 	// This optional ID will be used to distinguish logs & events in the indexes. If not set, we'll use the Consul.Datacenter
 	clusterID string `json:"cluster_id"`
+	// Set to true if you want to print ES requests (for debug only)
+	traceRequests bool `json:"trace_requests" default:"false"`
 }
 
 // Get the tag for this field (for internal usage only: fatal if not found !).
@@ -102,12 +104,7 @@ func getElasticStoreConfig(yorcConfig config.Configuration, storeConfig config.S
 	if storeProperties.IsSet(t) {
 		cfg.caCertPath = storeProperties.GetString(t)
 	}
-	t, e = getElasticStorageConfigPropertyTag("esForceRefresh", "json")
-	if storeProperties.IsSet(t) {
-		cfg.esForceRefresh = storeProperties.GetBool(t)
-	} else {
-		cfg.esForceRefresh, e = getBoolFromSettingsOrDefaults("esForceRefresh", storeProperties)
-	}
+	cfg.esForceRefresh, e = getBoolFromSettingsOrDefaults("esForceRefresh", storeProperties)
 	t, e = getElasticStorageConfigPropertyTag("indicePrefix", "json")
 	if storeProperties.IsSet(t) {
 		cfg.indicePrefix = storeProperties.GetString(t)
@@ -118,6 +115,7 @@ func getElasticStoreConfig(yorcConfig config.Configuration, storeConfig config.S
 	cfg.esRefreshWaitTimeout, e = getDurationFromSettingsOrDefaults("esRefreshWaitTimeout", storeProperties)
 	cfg.maxBulkSize, e = getIntFromSettingsOrDefaults("maxBulkSize", storeProperties)
 	cfg.maxBulkCount, e = getIntFromSettingsOrDefaults("maxBulkCount", storeProperties)
+	cfg.traceRequests, e = getBoolFromSettingsOrDefaults("traceRequests", storeProperties)
 	// If any error have been encountered, it will be returned
 	return
 }

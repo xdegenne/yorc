@@ -52,8 +52,9 @@ type stringValue struct {
 }
 
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
-	var esConfig elasticsearch6.Config
+	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 
+	var esConfig elasticsearch6.Config
 	esConfig = elasticsearch6.Config{Addresses: elasticStoreConfig.esUrls}
 
 	if len(elasticStoreConfig.caCertPath) > 0 {
@@ -64,12 +65,12 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 		}
 		esConfig.CACert = cert
 	}
-	if log.IsDebug() {
-		// In debug mode we add a custom logger
+	if log.IsDebug() || elasticStoreConfig.traceRequests {
+		// In debug mode or when traceRequests option is activated, we add a custom logger that print requests & responses
+		log.Printf("!!!!!!!!! Tracing ES requests & response can be expensive and verbose !!!!!!!!!")
 		esConfig.Logger = &debugLogger{}
 	}
 
-	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 	log.Printf("\t- Index prefix will be %s", elasticStoreConfig.indicePrefix)
 	log.Printf("\t- Documents will be segregated by clusterId : %s", elasticStoreConfig.clusterID)
 	log.Printf("\t- Will query ES for logs or events every %v and will wait for index refresh during %v",
@@ -324,7 +325,7 @@ func (l *debugLogger) LogRoundTrip(
 		_, _ = io.Copy(&resBuffer, res.Body)
 	}
 	resStr := resBuffer.String()
-	log.Debugf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
+	log.Printf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
 		level, start, req.Method, req.URL.String(), res.StatusCode, dur, reqStr, resStr)
 
 	return nil
