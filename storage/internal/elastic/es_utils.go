@@ -48,7 +48,7 @@ type lastIndexAggregation struct {
 	lastIndex uintValue `json:"last_index"`
 }
 type uintValue struct {
-	value uint64 `json:"value"`
+	value float64 `json:"value"`
 }
 
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
@@ -375,14 +375,14 @@ func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf
 		return e
 	}
 
-	var lastIndex uint64
+	var lastIndexF float64
 	hits := r.hits.total
 	if hits > 0 {
-		lastIndex = r.aggregations.logsOrEvents.lastIndex.value
+		lastIndexF = r.aggregations.logsOrEvents.lastIndex.value
 	}
-	if (lastIndex != uint64(iid)) {
-		return errors.Errorf("uint64(iid): %d and lastIndex: %d don't match ! iid = %d, iidStr = %s", uint64(iid), lastIndex, iid, iidStr)
+	if (lastIndexF != float64(iid)) {
+		return errors.Errorf("float64(iid): %d and lastIndexF: %d don't match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
 	}
-	log.Printf("uint64(iid): %d and lastIndex: %d do match ! iid = %d, iidStr = %s", uint64(iid), lastIndex, iid, iidStr)
+	log.Printf("float64(iid): %d and lastIndexF: %d do match ! iid = %d, iidStr = %s", float64(iid), lastIndexF, iid, iidStr)
 	return nil
 }
