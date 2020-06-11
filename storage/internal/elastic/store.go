@@ -64,25 +64,24 @@ func NewStore(cfg config.Configuration, storeConfig config.Store) (store.Store, 
 		return nil, err
 	}
 
-	log.Printf("ClusterID: %s, ServerID: %s", cfg.ClusterID, cfg.ServerID)
+	log.Printf("ClusterID: %s, ServerID: %s, DC: %s", cfg.ClusterID, cfg.ServerID, cfg.Consul.Datacenter)
 	var clusterID = cfg.ClusterID
 	if len(clusterID) == 0 {
 		clusterID = cfg.ServerID
 	}
 
-	indexName := getIndexName(elasticStoreConfig, "logs")
-	err = initStorageIndex(esClient, indexName)
+	err = initStorageIndex(esClient, elasticStoreConfig, "logs")
 	if err != nil {
-		return nil, errors.Wrapf(err, "Not able to init index <%s>", indexName)
+		return nil, errors.Wrapf(err, "Not able to init index for eventType <%s>", "logs")
 	}
-	debugIndexSetting(esClient, indexName)
-	indexName = getIndexName(elasticStoreConfig, "events")
-	err = initStorageIndex(esClient, indexName)
+	err = initStorageIndex(esClient, elasticStoreConfig, "events")
 	if err != nil {
-		return nil, errors.Wrapf(err, "Not able to init index <%s>", indexName)
+		return nil, errors.Wrapf(err, "Not able to init index for eventType <%s>", "events")
 	}
-	debugIndexSetting(esClient, indexName)
-
+	err = testIidAsLong(esClient, elasticStoreConfig, clusterID)
+	if err != nil {
+		return nil, err
+	}
 	return &elasticStore{encoding.JSON, esClient, clusterID, elasticStoreConfig}, nil
 }
 

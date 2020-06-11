@@ -26,6 +26,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -88,7 +89,9 @@ func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Clien
 }
 
 // Init ES index for logs or events storage: create it if not found.
-func initStorageIndex(c *elasticsearch6.Client, indexName string) error {
+func initStorageIndex(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf, storeType string) error {
+
+	indexName := getIndexName(elasticStoreConfig, storeType)
 	log.Printf("Checking if index <%s> already exists", indexName)
 
 	// check if the sequences index exists
@@ -135,7 +138,7 @@ func refreshIndex(c *elasticsearch6.Client, indexName string) {
 	res, err := req.Do(context.Background(), c)
 	err = handleESResponseError(res, "IndicesRefreshRequest:"+indexName, "", err)
 	if err != nil {
-		log.Println("AN error occured while refreshing index, due to : %+v", err)
+		log.Println("An error occurred while refreshing index, due to : %+v", err)
 	}
 	defer closeResponseBody("IndicesRefreshRequest:"+indexName, res)
 }
@@ -323,5 +326,63 @@ func (l *debugLogger) LogRoundTrip(
 	log.Debugf("ES Request [%s][%v][%s][%s][%d][%v] [%+v] : [%+v]",
 		level, start, req.Method, req.URL.String(), res.StatusCode, dur, reqStr, resStr)
 
+	return nil
+}
+
+func testIidAsLong(c *elasticsearch6.Client, elasticStoreConfig elasticStoreConf, clusterID string) error {
+	initStorageIndex(c, elasticStoreConfig, "test_iid")
+	indexName := getIndexName(elasticStoreConfig, "test_iid")
+
+	var iid int64 = 1591271005841389857
+	iidStr := strconv.FormatInt(iid, 10)
+
+	message := `{"iid": ` + iidStr +`, "iid_str": "` + iidStr +`", "cluster_id": "` + clusterID +`"}`
+
+	// Prepare ES request
+	req := esapi.IndexRequest{
+		Index:        indexName,
+		DocumentType: "logs_or_event",
+		Body:         strings.NewReader(message),
+	}
+	res, err := req.Do(context.Background(), c)
+	defer closeResponseBody("IndexRequest:"+indexName, res)
+	err = handleESResponseError(res, "IndexRequest:"+indexName, message, err)
+	if err != nil {
+		return err
+	}
+
+	query := buildLastModifiedIndexQuery(clusterID, "")
+
+	res, err = c.Search(
+		c.Search.WithContext(context.Background()),
+		c.Search.WithIndex(indexName),
+		c.Search.WithSize(0),
+		c.Search.WithBody(strings.NewReader(query)),
+	)
+	defer closeResponseBody("LastModifiedIndexQuery for ", res)
+	err = handleESResponseError(res, "LastModifiedIndexQuery for ", query, err)
+	if err != nil {
+		return err
+	}
+
+	var r lastIndexResponse
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		e := errors.Wrapf(
+			err,
+			"Not able to parse response body after LastModifiedIndexQuery was sent for key %s, status was %s, query was: %s",
+			"myTest", res.Status(), query,
+		)
+		return e
+	}
+
+	var lastIndex uint64
+	hits := r.hits.total
+	if hits > 0 {
+		lastIndex = r.aggregations.logsOrEvents.lastIndex.value
+	}
+	if (lastIndex != uint64(iid)) {
+		return errors.Errorf("uint64(iid): %d and lastIndex: %d don't match ! iid = %d, iidStr = %s", uint64(iid), lastIndex, iid, iidStr)
+	}
+	log.Printf("uint64(iid): %d and lastIndex: %d do match ! iid = %d, iidStr = %s", uint64(iid), lastIndex, iid, iidStr)
 	return nil
 }
