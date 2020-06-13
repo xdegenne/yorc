@@ -253,17 +253,16 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	}
 
 	log.Printf("LastIndex decoded response: %v", r)
-	total := r["hits"].(map[string]interface{})["total"]
+	total := r["hits"].(map[string]interface{})["total"].(float64)
 	log.Printf("total: %T", total)
-	lastIndexR := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"]
+	lastIndexR := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 	log.Printf("lastIndexR: %T", lastIndexR)
 	//hits := r.hits.total
-	//if hits > 0 {
-	//	lastIndexReceived := r.aggregations.logsOrEvents.lastIndex.value
-	//	lastIndex = uint64(lastIndexReceived)
-	//	log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexReceived, lastIndex)
-	//	//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
-	//}
+	if total > 0 {
+		lastIndex = uint64(lastIndexR)
+		log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexR, lastIndex)
+		//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
+	}
 
 	return lastIndex, nil
 }
