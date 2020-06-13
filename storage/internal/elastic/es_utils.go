@@ -48,7 +48,7 @@ type lastIndexAggregation struct {
 	docCount  int         `json:"doc_count"`
 }
 type stringValue struct {
-	value int64 `json:"value"`
+	value float64 `json:"value"`
 }
 
 type countResponse struct {
