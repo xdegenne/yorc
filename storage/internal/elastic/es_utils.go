@@ -108,16 +108,6 @@ func initStorageIndex(c *elasticsearch6.Client, elasticStoreConfig elasticStoreC
 		if err = handleESResponseError(res, "IndicesCreateRequest:"+indexName, requestBodyData, err); err != nil {
 			return err
 		}
-		//// Initialize a first document
-		//initDoc := `{"clusterId":"` + elasticStoreConfig.clusterID + `","iid":"` + getSortableStringFromUint64(0) + `"}`
-		//reqDoc := esapi.IndexRequest{
-		//	Index:        indexName,
-		//	DocumentType: "_doc",
-		//	Body:         strings.NewReader(initDoc),
-		//}
-		//res, err = reqDoc.Do(context.Background(), c)
-		//defer closeResponseBody("IndexRequest:"+indexName, res)
-		//return handleESResponseError(res, "IndexRequest:"+indexName, initDoc, err)
 	} else {
 		return handleESResponseError(res, "IndicesExistsRequest:"+indexName, "", err)
 	}
