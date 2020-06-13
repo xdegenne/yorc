@@ -236,15 +236,15 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	}
 
 	total := r["hits"].(map[string]interface{})["total"].(float64)
-	// ES returns aggregations as float, we have a precision loss of few ns
-	lastIndexR := r["aggregations"].(map[string]interface{})["max_iid"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 	if total > 0 {
+		// ES returns aggregations as float, we have a precision loss of few ns
+		lastIndexR := r["aggregations"].(map[string]interface{})["max_iid"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 		log.Debugf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexR, lastIndex)
 		lastIndex = uint64(lastIndexR)
+		// The ES max result was a float, there is a risk that this is not really the lastIndex
+		// We need to verify
+		lastIndex = s.verifyLastIndex(indexName, deploymentID, lastIndex)
 	}
-	// The ES max result was a float, there is a risk that this is not really the lastIndex
-	// We need to verify
-	lastIndex = s.verifyLastIndex(indexName, deploymentID, lastIndex)
 	return lastIndex, nil
 }
 
