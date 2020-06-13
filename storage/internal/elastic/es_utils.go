@@ -52,7 +52,7 @@ type stringValue struct {
 }
 
 type countResponse struct {
-	count int `json:"count"`
+	count int64 `json:"count"`
 }
 
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
