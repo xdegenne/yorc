@@ -240,6 +240,8 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		return
 	}
 
+	log.Printf("LastIndex decoding ...")
+
 	var r lastIndexResponse
 	if err := json.NewDecoder(resSearch.Body).Decode(&r); err != nil {
 		e = errors.Wrapf(
@@ -250,6 +252,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		return
 	}
 
+	log.Printf("LastIndex decoded response: %v", r)
 	hits := r.hits.total
 	if hits > 0 {
 		lastIndexReceived := r.aggregations.logsOrEvents.lastIndex.value
