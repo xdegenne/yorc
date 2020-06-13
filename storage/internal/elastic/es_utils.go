@@ -48,7 +48,7 @@ type lastIndexAggregation struct {
 	docCount  int         `json:"doc_count"`
 }
 type stringValue struct {
-	value string `json:"value"`
+	value int64 `json:"value"`
 }
 
 type countResponse struct {
@@ -220,7 +220,7 @@ func decodeEsQueryResponse(conf elasticStoreConf, index string, waitIndex uint64
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
 		id := hit.(map[string]interface{})["_id"].(string)
 		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		iid := source["iid"]
+		iid := source["iidStr"]
 		iidUInt64, err := parseInt64StringToUint64(iid.(string))
 		if err != nil {
 			log.Printf("Not able to parse iid_str property %s as uint64, document id: %s, source: %+v, ignoring this document !", iid, id, source)

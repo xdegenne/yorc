@@ -252,7 +252,10 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 
 	hits := r.hits.total
 	if hits > 0 {
-		lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
+		lastIndexReceived := r.aggregations.logsOrEvents.lastIndex.value
+		lastIndex = uint64(lastIndexReceived)
+		log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexReceived, lastIndex)
+		//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
 	}
 
 	log.Debugf(
