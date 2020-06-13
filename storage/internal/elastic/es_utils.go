@@ -38,14 +38,14 @@ type lastIndexResponse struct {
 	aggregations logOrEventAggregation `json:"aggregations"`
 }
 type hits struct {
-	total int `json:"total"`
+	total int64 `json:"total"`
 }
 type logOrEventAggregation struct {
 	logsOrEvents lastIndexAggregation `json:"logs_or_events"`
 }
 type lastIndexAggregation struct {
 	lastIndex stringValue `json:"last_index"`
-	docCount  int         `json:"doc_count"`
+	docCount  int64         `json:"doc_count"`
 }
 type stringValue struct {
 	value float64 `json:"value"`
