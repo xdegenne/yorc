@@ -214,19 +214,19 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	log.Debugf("buildLastModifiedIndexQuery is : %s", query)
 
 	// If don't have any document, do nothing
-	resCount, e := s.esClient.Count(s.esClient.Count.WithIndex(indexName), s.esClient.Count.WithDocumentType("logs_or_event"))
-	defer closeResponseBody("Count"+indexName, resCount)
-	e = handleESResponseError(resCount, "Count"+indexName, "", e)
-	if e != nil {
-		return
-	}
-	var respCount countResponse
-	if e = json.NewDecoder(resCount.Body).Decode(&respCount); e != nil {
-		return
-	}
-	if respCount.count == 0 {
-		return 0, nil
-	}
+	//resCount, e := s.esClient.Count(s.esClient.Count.WithIndex(indexName), s.esClient.Count.WithDocumentType("logs_or_event"))
+	//defer closeResponseBody("Count"+indexName, resCount)
+	//e = handleESResponseError(resCount, "Count"+indexName, "", e)
+	//if e != nil {
+	//	return
+	//}
+	//var respCount countResponse
+	//if e = json.NewDecoder(resCount.Body).Decode(&respCount); e != nil {
+	//	return
+	//}
+	//if respCount.count == 0 {
+	//	return 0, nil
+	//}
 
 	resSearch, err := s.esClient.Search(
 		s.esClient.Search.WithContext(context.Background()),
@@ -257,11 +257,6 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexReceived, lastIndex)
 		//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
 	}
-
-	log.Debugf(
-		"Successfully executed LastModifiedIndexQuery request for key %s ! status: %s, hits: %d; lastIndex: %d",
-		k, resSearch.Status(), hits, lastIndex,
-	)
 
 	return lastIndex, nil
 }
