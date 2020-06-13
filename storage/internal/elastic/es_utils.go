@@ -262,7 +262,7 @@ func sendBulkRequest(c *elasticsearch6.Client, opeCount int, body *[]byte) error
 			return errors.Errorf("The bulk request succeeded, but the response contains errors : %+v", rsp)
 		}
 	}
-	log.Printf("Bulk request containing %d operations (%d bytes) has been accepted without errors", opeCount, len(*body))
+	log.Printf("Bulk request containing %d operations (%d bytes) has been accepted successfully", opeCount, len(*body))
 	return nil
 }
 
