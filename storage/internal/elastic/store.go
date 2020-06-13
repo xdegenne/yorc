@@ -96,7 +96,7 @@ func (s *elasticStore) Set(ctx context.Context, k string, v interface{}) error {
 	// Prepare ES request
 	req := esapi.IndexRequest{
 		Index:        indexName,
-		DocumentType: "logs_or_event",
+		DocumentType: "_doc",
 		Body:         bytes.NewReader(body),
 	}
 	res, err := req.Do(context.Background(), s.esClient)
@@ -225,8 +225,6 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 		return
 	}
 
-	log.Printf("LastIndex decoding ...")
-
 	var r map[string]interface{}
 	if err := json.NewDecoder(resSearch.Body).Decode(&r); err != nil {
 		e = errors.Wrapf(
@@ -239,7 +237,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 
 	total := r["hits"].(map[string]interface{})["total"].(float64)
 	// ES returns aggregations as float, we have a precision loss of few ns
-	lastIndexR := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
+	lastIndexR := r["aggregations"].(map[string]interface{})["max_iid"].(map[string]interface{})["last_index"].(map[string]interface{})["value"].(float64)
 	if total > 0 {
 		log.Debugf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexR, lastIndex)
 		lastIndex = uint64(lastIndexR)

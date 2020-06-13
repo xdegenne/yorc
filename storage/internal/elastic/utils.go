@@ -154,7 +154,7 @@ func eventuallyAppendValueToBulkRequest(c elasticStoreConf, clusterID string, bo
 	log.Debugf("About to add a document of size %d bytes to bulk request", len(document))
 
 	// The bulk action
-	index := `{"index":{"_index":"` + getIndexName(c, storeType) + `","_type":"logs_or_event"}}`
+	index := `{"index":{"_index":"` + getIndexName(c, storeType) + `","_type":"_doc"}}`
 	bulkOperation := make([]byte, 0)
 	bulkOperation = append(bulkOperation, index...)
 	bulkOperation = append(bulkOperation, "\n"...)

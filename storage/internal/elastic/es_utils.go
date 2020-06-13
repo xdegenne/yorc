@@ -32,29 +32,6 @@ import (
 
 var pfalse = false
 
-// structs for lastIndexRequest response decoding.
-type lastIndexResponse struct {
-	hits         hits                  `json:"hits"`
-	aggregations logOrEventAggregation `json:"aggregations"`
-}
-type hits struct {
-	total int64 `json:"total"`
-}
-type logOrEventAggregation struct {
-	logsOrEvents lastIndexAggregation `json:"logs_or_events"`
-}
-type lastIndexAggregation struct {
-	lastIndex stringValue `json:"last_index"`
-	docCount  int64         `json:"doc_count"`
-}
-type stringValue struct {
-	value float64 `json:"value"`
-}
-
-type countResponse struct {
-	count int64 `json:"count"`
-}
-
 func prepareEsClient(elasticStoreConfig elasticStoreConf) (*elasticsearch6.Client, error) {
 	log.Printf("Elastic storage will run using this configuration: %+v", elasticStoreConfig)
 
@@ -135,7 +112,7 @@ func initStorageIndex(c *elasticsearch6.Client, elasticStoreConfig elasticStoreC
 		//initDoc := `{"clusterId":"` + elasticStoreConfig.clusterID + `","iid":"` + getSortableStringFromUint64(0) + `"}`
 		//reqDoc := esapi.IndexRequest{
 		//	Index:        indexName,
-		//	DocumentType: "logs_or_event",
+		//	DocumentType: "_doc",
 		//	Body:         strings.NewReader(initDoc),
 		//}
 		//res, err = reqDoc.Do(context.Background(), c)

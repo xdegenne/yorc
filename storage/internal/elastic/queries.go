@@ -25,7 +25,7 @@ func buildInitStorageIndexQuery() (query string) {
          "refresh_interval": "1s"
      },
      "mappings": {
-         "logs_or_event": {
+         "_doc": {
              "_all": {"enabled": false},
              "dynamic": "false",
              "properties": {
@@ -58,7 +58,7 @@ func buildLastModifiedIndexQuery(clusterID string, deploymentID string) (query s
 		query = `
 {
     "aggs" : {
-        "logs_or_events" : {
+        "max_iid" : {
             "filter" : {
 				"term": { "clusterId": "` + clusterID + `" }
             },
@@ -72,7 +72,7 @@ func buildLastModifiedIndexQuery(clusterID string, deploymentID string) (query s
 		query = `
 {
     "aggs" : {
-        "logs_or_events" : {
+        "max_iid" : {
             "filter" : {
                 "bool": {
                     "must": [
