@@ -242,7 +242,7 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 
 	log.Printf("LastIndex decoding ...")
 
-	var r lastIndexResponse
+	var r map[string]interface{}
 	if err := json.NewDecoder(resSearch.Body).Decode(&r); err != nil {
 		e = errors.Wrapf(
 			err,
@@ -253,13 +253,17 @@ func (s *elasticStore) GetLastModifyIndex(k string) (lastIndex uint64, e error) 
 	}
 
 	log.Printf("LastIndex decoded response: %v", r)
-	hits := r.hits.total
-	if hits > 0 {
-		lastIndexReceived := r.aggregations.logsOrEvents.lastIndex.value
-		lastIndex = uint64(lastIndexReceived)
-		log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexReceived, lastIndex)
-		//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
-	}
+	total := r["hits"].(map[string]interface{})["total"]
+	log.Printf("total: %T", total)
+	lastIndexR := r["aggregations"].(map[string]interface{})["logs_or_events"].(map[string]interface{})["last_index"].(map[string]interface{})["value"]
+	log.Printf("lastIndexR: %T", lastIndexR)
+	//hits := r.hits.total
+	//if hits > 0 {
+	//	lastIndexReceived := r.aggregations.logsOrEvents.lastIndex.value
+	//	lastIndex = uint64(lastIndexReceived)
+	//	log.Printf("Received lastIndexReceived: %v, lastIndex: %v", lastIndexReceived, lastIndex)
+	//	//lastIndex, e = parseInt64StringToUint64(r.aggregations.logsOrEvents.lastIndex.value)
+	//}
 
 	return lastIndex, nil
 }
